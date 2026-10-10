@@ -12,9 +12,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 let mode = 'full', repeat = 1;
 for (let i = 0; i < args.length; i++) {
-  if (['--unit', '--portable'].includes(args[i])) mode = args[i].slice(2);
+  if (['--unit', '--portable', '--helpers'].includes(args[i])) mode = args[i].slice(2);
   else if (args[i] === '--repeat' && /^[1-9][0-9]*$/.test(args[i + 1] || '')) repeat = Number(args[++i]);
-  else if (args[i] === '--help') { console.log('Usage: node pstack/scripts/test.mjs [--unit|--portable] [--repeat N]\nDefault: unit, helpers, native discovery, and mock API invocation. No checks are silently skipped.'); process.exit(0); }
+  else if (args[i] === '--help') { console.log('Usage: node pstack/scripts/test.mjs [--unit|--portable|--helpers] [--repeat N]\nDefault: unit, helpers, native discovery, and mock API invocation. No checks are silently skipped.'); process.exit(0); }
   else { console.error(`Unknown or invalid argument: ${args[i]}`); process.exit(1); }
 }
 function snapshot(path, prefix = '') {
@@ -37,13 +37,15 @@ try {
   const required = ['git', 'bash', ...(mode !== 'unit' ? ['bun'] : []), ...(mode === 'full' ? ['codex', 'opencode', 'claude'] : [])];
   for (const executable of required) {
     const result = spawnSync(executable, ['--version'], { env, encoding: 'utf8', timeout: 15000 });
-    if (result.error || result.status !== 0) throw new Error(`Missing or unusable prerequisite: ${executable}. Install it, or explicitly choose --unit / --portable for a narrower check.`);
+    if (result.error || result.status !== 0) throw new Error(`Missing or unusable prerequisite: ${executable}. Install it, or explicitly choose --unit / --portable / --helpers for a narrower check.`);
     console.log(`${executable}: ${result.stdout.trim().split('\n')[0]}`);
   }
   for (let pass = 1; pass <= repeat; pass++) {
     console.log(`\nPstack ${mode} suite ${pass}/${repeat}`);
-    run(process.execPath, ['--test', ...readdirSync(join(root, 'tests')).filter(name => name.endsWith('.test.mjs')).sort().map(name => join(root, 'tests', name))]);
-    run('bash', ['-n', join(root, 'skills/poteto-mode/scripts/worktree-audit.sh')]);
+    if (mode !== 'helpers') {
+      run(process.execPath, ['--test', ...readdirSync(join(root, 'tests')).filter(name => name.endsWith('.test.mjs')).sort().map(name => join(root, 'tests', name))]);
+      run('bash', ['-n', join(root, 'skills/poteto-mode/scripts/worktree-audit.sh')]);
+    }
     if (mode !== 'unit') {
       const helpers = join(temporary, `helpers-${pass}`);
       cpSync(join(root, 'skills/poteto-mode/scripts'), helpers, { recursive: true, filter: path => !path.split(/[\\/]/).includes('node_modules') });

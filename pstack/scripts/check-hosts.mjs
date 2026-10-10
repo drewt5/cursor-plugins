@@ -19,23 +19,24 @@ function command(executable, args, env = {}) {
   const descriptor = openSync(output, "w");
   const result = spawnSync(executable, args, { cwd: project, env: { ...isolated, PWD: project, ...env }, encoding: 'utf8', stdio: ['ignore', descriptor, 'pipe'], timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
   closeSync(descriptor);
-  if (result.error) throw result.error;
-  assert.equal(result.status, 0, `${executable}: ${result.stderr}`);
+  const details = `${executable} ${args.join(' ')}: ${result.error?.message || result.status}\n${result.stderr?.slice(-4000)}\n${readFileSync(output, 'utf8').slice(-4000)}`;
+  assert.ok(!result.error && result.status === 0, details);
   return readFileSync(output, 'utf8');
 }
 function checkNames(names) {
   assert.deepEqual([...new Set(names.map(name => name.replace(/^pstack:/, '')))].sort(), expected);
 }
 async function codexSkills() {
-  const proc = spawn('codex', ['app-server', '--stdio'], { cwd: project, env: { ...isolated, PWD: project }, stdio: ['pipe', 'pipe', 'pipe'] });
+  const proc = spawn('codex', ['app-server', '--stdio'], { cwd: project, env: { ...isolated, PWD: project }, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
+  const closed = new Promise(done => proc.once('close', done));
   let pending = '', errors = '';
   try {
     return await new Promise((resolveResult, reject) => {
       const timer = setTimeout(() => reject(new Error(`Codex discovery timed out: ${errors}`)), 20000);
       const finish = (error, result) => { clearTimeout(timer); error ? reject(error) : resolveResult(result); };
-      proc.stderr.on('data', chunk => { errors += chunk; });
+      proc.stderr.on('data', chunk => { errors = (errors + chunk).slice(-4000); });
       proc.on('error', error => finish(error));
-      proc.on('exit', code => finish(new Error(`Codex exited (${code}): ${errors}`)));
+      proc.on('close', code => finish(new Error(`Codex exited (${code}): ${errors}`)));
       proc.stdout.on('data', chunk => {
         pending += chunk;
         let at;
@@ -53,7 +54,17 @@ async function codexSkills() {
       });
       proc.stdin.write(JSON.stringify({ id: 1, method: 'initialize', params: { clientInfo: { name: 'pstack_portability_check', version: '1.0.0' }, capabilities: { experimentalApi: true } } }) + '\n');
     });
-  } finally { proc.kill(); }
+  } finally {
+    const kill = signal => {
+      if (!proc.pid) return;
+      try { process.platform === 'win32' ? proc.kill(signal) : process.kill(-proc.pid, signal); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+    };
+    kill('SIGTERM');
+    const force = setTimeout(() => kill('SIGKILL'), 1000);
+    await closed;
+    clearTimeout(force);
+    kill('SIGKILL');
+  }
 }
 
 try {

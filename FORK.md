@@ -13,7 +13,9 @@ node pstack/scripts/install.mjs --target all --project /absolute/path/to/project
 npm --prefix pstack test
 ```
 
-See [installation](pstack/docs/install.md) for individual hosts, global installation, removal, and test prerequisites. Installation copies only `pstack/` into the destination. It does not install the other plugins.
+See [installation](pstack/docs/install.md) for individual hosts, global installation, removal, and test prerequisites. See [PR verification](pstack/docs/ci.md) for checks, failure artifacts, and agent monitoring. Require `Pstack required` in branch protection after the workflow lands and passes.
+
+Installation copies only `pstack/` into the destination. It does not install the other plugins.
 
 ## Keep the changes scoped
 
