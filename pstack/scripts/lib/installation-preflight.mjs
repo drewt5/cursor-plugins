@@ -3,6 +3,7 @@ import { canonicalPath, safePath, stateFrom, installationSnapshot } from './inst
 import { renderArtifacts } from './installation-artifacts.mjs';
 import { planInstallation, applyInstallation } from './installation-plan.mjs';
 import { selectInstallationTargets } from './installation-targets.mjs';
+import { loadHosts } from './tested-hosts.mjs';
 import { probeHostVersion } from './installation-diagnostics.mjs';
 import { inspectExistingInstallation } from './installation-discovery.mjs';
 const skippedVersion = row => ({ status: 'unavailable', code: null, evidence: { command: [row.executable, '--version'], testedVersion: row.version, actualVersion: null, reason: 'Uninstall does not launch host executables.' } });
@@ -27,12 +28,14 @@ export async function prepareInstallation({ source, root, globalRoot, options, e
   const { selected } = selectInstallationTargets(options, previous, { root, probe, validate: false });
   const targets = options.uninstall ? previous.targets.filter(target => !selected.includes(target)) : [...new Set([...previous.targets, ...selected])].sort();
   const opencodeRoot = options.global ? canonicalPath(resolve(env.XDG_CONFIG_HOME || join(root, '.config'), 'opencode')) : '.opencode';
-  const artifacts = renderArtifacts({ source, root, targets, opencodeRoot, global: options.global });
+  const hostObservations = options.uninstall ? (previous.version === 3 ? previous.hostObservations : []).filter(item => targets.includes(item.host)) : loadHosts().filter(row => targets.includes(row.host)).map(row => { const observed = probe(row); return { host: row.host, version: observed.evidence.actualVersion ?? null, status: observed.evidence.actualVersion ? 'observed' : 'unavailable' }; });
+  const artifacts = renderArtifacts({ source, root, targets, opencodeRoot, global: options.global, hostObservations });
   const snapshot = installationSnapshot({ root, desired: artifacts.state });
   const plan = planInstallation(snapshot, artifacts);
   const report = await diagnose({ ...diagnosticOptions, targets: options.uninstall ? selected : targets });
   // Missing owned artifacts can be restored/removed by this concrete safe plan.
-  const failures = report.findings.filter(item => item.severity === 'error' && !(item.code === 'OWNED_MISSING' && plan.operations.some(op => op.path === item.subject && op.action !== 'conflict')));
+  const repairableDigest = report.integrity.modified.length === 0 && report.integrity.replacements.length === 0 && (report.integrity.missing.length > 0 || report.findings.some(item => item.code === 'OWNED_MODE_CHANGED'));
+  const failures = report.findings.filter(item => item.severity === 'error' && !(item.code === 'PACKAGE_DIGEST_CHANGED' && repairableDigest) && !(item.code === 'OWNED_MISSING' && plan.operations.some(op => op.path === item.subject && op.action !== 'conflict')));
   const discoveryFailures = options.uninstall ? [] : mandatoryDiscoveryFailures(report);
   return { root, targets, selected, plan, report, failures, discoveryFailures, options, diagnosticOptions };
 }

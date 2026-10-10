@@ -3,7 +3,7 @@ export function diagnosticExitCode(report) {
   return report.findings.some(finding => finding.severity === 'error') ? 1 : 0;
 }
 export function formatDoctor(report) {
-  const lines = [`Pstack: ${report.state}`, `Scope: ${report.scope.kind} ${report.scope.root}`, `Release identity: ${report.provenance?.identity || 'unknown (legacy receipt or uninstalled)'}`, `Targets: ${report.selectedTargets.join(', ') || 'none recorded'}`, `File integrity: ${report.integrity.status}`, `Native discovery: ${report.discovery.status}`];
+  const lines = [`Pstack: ${report.state}`, `Scope: ${report.scope.kind} ${report.scope.root}`, `Release identity: ${report.provenance?.status === 'unknown' || !report.provenance ? 'unknown (legacy receipt or uninstalled)' : `${report.provenance.version} ${report.provenance.classification}; source ${report.provenance.sourceCommit || 'unknown'}; digest ${report.provenance.packageDigest}; payload ${report.provenance.status}`}`, `Targets: ${report.selectedTargets.join(', ') || 'none recorded'}`, `File integrity: ${report.integrity.status}`, `Native discovery: ${report.discovery.status}`];
   for (const host of [...report.hosts, ...(report.detectedHosts || [])]) lines.push(`${host.host}: ${host.evidence.command[0]} ${host.evidence.actualVersion || 'version unavailable'} (${host.status}; tested ${host.evidence.testedVersion})`);
   for (const finding of report.findings) {
     lines.push(`${finding.severity.toUpperCase()} ${finding.code} [${finding.verification}] ${finding.subject}`, `  ${finding.action}`);

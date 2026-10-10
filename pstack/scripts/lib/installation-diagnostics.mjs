@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { canonicalPath, entryOwner, hosts, installationSnapshot, present, safePath, stateFrom } from './installation-state.mjs';
+import { canonicalPath, digest, isPackagePath, entryOwner, hosts, installationSnapshot, present, safePath, stateFrom } from './installation-state.mjs';
 import { loadHosts } from './tested-hosts.mjs';
 
 export function probeHostVersion(row, env = process.env, timeout = 3000) {
@@ -25,7 +25,7 @@ export function inspectInstallation({ root, global = false, targets, env = proce
   if (targets !== undefined && (!Array.isArray(targets) || targets.some(host => !hosts.includes(host)))) throw new Error('Invalid diagnostic host selection');
   const findings = [];
   const finding = (code, severity, subject, evidence, action, verification = 'verified') => findings.push({ code, severity, subject, evidence, action, verification });
-  const result = { schemaVersion: 1, scope: { kind: global ? 'global' : 'project', root: resolve(root) }, state: 'uninstalled', receipt: { status: 'absent' }, targets: [], configuredRoots: {}, recordedRoots: {}, otherScopes: [], integrity: { status: 'not-installed', missing: [], modified: [], replacements: [] }, hosts: [], discovery: { status: 'unavailable' }, findings };
+  const result = { schemaVersion: 1, scope: { kind: global ? 'global' : 'project', root: resolve(root) }, state: 'uninstalled', receipt: { status: 'absent' }, targets: [], configuredRoots: {}, recordedRoots: {}, otherScopes: [], integrity: { status: 'not-installed', missing: [], modified: [], replacements: [] }, hosts: [], discovery: { status: 'unavailable' }, provenance: { status: 'unknown', classification: 'unknown', sourceCommit: null, packageDigest: null }, findings };
   let previous;
   try {
     result.scope.root = canonicalPath(root);
@@ -34,6 +34,7 @@ export function inspectInstallation({ root, global = false, targets, env = proce
     if (Object.keys(previous.entries).some(name => !managedName(name))) throw new Error('Receipt contains paths outside managed package/host locations');
     result.receipt = { path, status: present(path) ? 'valid' : 'absent', schemaVersion: present(path) ? previous.version : null };
     result.targets = previous.targets;
+    result.installedHostObservations = previous.version === 3 ? previous.hostObservations : [];
     if (result.receipt.status === 'valid') {
       const selected = targets ?? previous.targets;
       const snapshot = snapshotReader({ root: result.scope.root, desired: previous, includeEntry: name => entryOwner(name) === 'shared-package' || selected.includes(entryOwner(name)) });
@@ -55,6 +56,18 @@ export function inspectInstallation({ root, global = false, targets, env = proce
         }
       }
       if (findings.some(item => item.severity === 'error')) result.integrity.status = 'failed';
+      if (previous.version === 3) {
+        const payload = snapshot.owned.filter(item => item.name.startsWith('.pstack/package/') && isPackagePath(item.name.slice('.pstack/package/'.length))).map(item => {
+          const actual = snapshot.observed[item.path];
+          return { path: item.name.slice('.pstack/package/'.length), kind: actual.kind, executableMode: actual.mode & 0o111, hash: actual.hash };
+        }).sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+        const observedPackageDigest = payload.every(item => item.kind === 'file') ? digest(JSON.stringify(payload)) : null;
+        const matches = observedPackageDigest === previous.provenance.packageDigest;
+        result.provenance = { ...previous.provenance, status: matches ? 'matches-recorded-payload' : 'modified', classification: matches ? previous.provenance.classification : 'modified', recordedClassification: previous.provenance.classification, observedPackageDigest };
+        if (!matches) result.integrity.status = 'failed';
+        if (!matches) finding('PACKAGE_DIGEST_CHANGED', 'error', result.scope.root, { recorded: previous.provenance.packageDigest, observed: observedPackageDigest }, 'Preserve the modified managed payload; restore recorded files or reinstall from an explicitly selected source after resolving ownership conflicts.');
+      }
+
     }
   } catch (error) {
     result.state = result.receipt.status === 'valid' ? 'inspection-unavailable' : 'invalid';
