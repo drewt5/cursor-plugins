@@ -10,7 +10,11 @@ Requires Node.js 20 or newer and an installed coding host. Run these commands fr
 node pstack/scripts/install.mjs --target all --project /absolute/path/to/your/project
 ```
 
-For all your projects, use `--global` instead of `--project PATH`. Select `codex`, `opencode`, or `claude-code` instead of `all` to install one host. Cursor is available separately with `--target cursor`. Restart the coding host after installation. No model configuration is required.
+For all your projects, use `--global` instead of `--project PATH`. Select `codex`, `opencode`, or `claude-code` instead of `all` to install one host. Cursor is available separately with `--target cursor`. Without `--target`, a fresh install selects the only usable CLI host. If none or several are found, it exits before writing and prints explicit choices and a copyable command. Cursor always requires `--target cursor`. The current directory is the default project; user scope requires `--global`. Explicit CLI targets must have a usable executable. Untested versions produce a warning and do not establish native compatibility.
+
+Updates without `--target` retain the recorded targets even if PATH changes. Explicit additions are additive. Uninstall without `--target` removes the recorded targets, requires no host executable, and is a no-op when nothing is installed. To remove one target, specify it explicitly.
+
+Restart the coding host after installation. No model configuration is required.
 
 Re-running installation updates owned files and restores missing links. Targets are additive. `--dry-run` previews changes without writing. Existing conflicting skills and modified package files are preserved and reported; move or reconcile those files before retrying. The package is copied into `.pstack/package/`, so the source checkout can move without breaking an installation. Project installations can also move.
 
