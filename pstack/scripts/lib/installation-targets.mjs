@@ -2,7 +2,7 @@ import { hosts } from './installation-state.mjs';
 import { probeHostVersion } from './installation-diagnostics.mjs';
 import { loadHosts } from './tested-hosts.mjs';
 const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
-export function selectInstallationTargets(options, previous, { probe = row => probeHostVersion(row), root = process.cwd() } = {}) {
+export function selectInstallationTargets(options, previous, { probe = row => probeHostVersion(row), root = process.cwd(), validate = true } = {}) {
   if (options.target !== undefined && ![...hosts, 'all'].includes(options.target)) throw new Error('Invalid requested target');
   const rows = loadHosts(), observations = new Map();
   const observe = host => {
@@ -20,7 +20,7 @@ export function selectInstallationTargets(options, previous, { probe = row => pr
     }
     selected = [usable[0].host];
   }
-  if (!options.uninstall) {
+  if (!options.uninstall && validate) {
     const failures = [...new Set([...previous.targets, ...selected])].filter(host => host !== 'cursor' && observe(host).status === 'failed');
     if (failures.length) throw new Error(`Selected CLI hosts are missing or unusable; no files changed: ${failures.map(host => `${host} (${observations.get(host).code})`).join(', ')}. Install/repair the providers through their supported tooling, or uninstall an unwanted recorded target first.`);
   }

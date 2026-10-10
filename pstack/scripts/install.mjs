@@ -3,10 +3,8 @@ import { existsSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { hosts, canonicalPath, safePath, stateFrom, installationSnapshot } from './lib/installation-state.mjs';
-import { selectInstallationTargets } from './lib/installation-targets.mjs';
-import { renderArtifacts } from './lib/installation-artifacts.mjs';
-import { planInstallation, applyInstallation } from './lib/installation-plan.mjs';
+import { hosts } from './lib/installation-state.mjs';
+import { prepareInstallation, applyPreparedInstallation, formatPreflight } from './lib/installation-preflight.mjs';
 const source = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
 const help = `Usage: node pstack/scripts/install.mjs [--target all|${hosts.join('|')}] [--project PATH|--global] [--uninstall] [--dry-run]
 Defaults: current project; fresh install selects the only usable CLI host or requires --target.
@@ -28,33 +26,35 @@ function parse(args) {
   if (!options.global && !options.project) options.project = process.cwd();
   return options;
 }
-function run(options) {
+async function run(options) {
   const requestedRoot = resolve(options.global ? homedir() : options.project);
   const root = existsSync(requestedRoot) ? realpathSync(requestedRoot) : requestedRoot;
   if (root === source || root.startsWith(source + sep)) throw new Error('Install into a project outside the pstack source package.');
-  const statePath = safePath(root, '.pstack/install.json');
-  const previous = stateFrom(statePath);
-  const selection = selectInstallationTargets(options, previous, { root });
-  const selected = selection.selected;
-  for (const observation of selection.observations.filter(item => item.code === 'HOST_VERSION_UNKNOWN')) console.error(`${observation.host}: untested version ${observation.evidence.actualVersion}; structural checks apply, native compatibility remains unknown.`);
-  const targets = options.uninstall ? previous.targets.filter(target => !selected.includes(target)) : [...new Set([...previous.targets, ...selected])].sort();
-  const opencodeRoot = options.global ? canonicalPath(resolve(process.env.XDG_CONFIG_HOME || join(root, '.config'), 'opencode')) : '.opencode';
-  const artifacts = renderArtifacts({ source, root, targets, opencodeRoot, global: options.global });
-  const snapshot = installationSnapshot({ root, desired: artifacts.state });
-  const plan = planInstallation(snapshot, artifacts);
+  const prepared = await prepareInstallation({ source, root, globalRoot: homedir(), options });
+  const { targets, plan, report, failures, discoveryFailures } = prepared;
   if (options['dry-run']) {
-    console.log(JSON.stringify({ root, targets, files: snapshot.wanted.length, remove: plan.operations.filter(op => op.action === 'remove').map(op => op.path), operations: plan.operations, conflicts: plan.conflicts }, null, 2));
-    if (plan.conflicts.length) process.exitCode = 1;
+    console.log(JSON.stringify({ root, targets, selectedTargets: prepared.selected, files: plan?.snapshot.wanted.length ?? 0, remove: plan?.operations.filter(op => op.action === 'remove').map(op => op.path) ?? [], operations: plan?.operations ?? [], conflicts: plan?.conflicts ?? [], findings: report.findings, discovery: report.discovery }, null, 2));
+    if (!plan || plan.conflicts.length || failures.length || discoveryFailures.length) process.exitCode = 1;
     return;
   }
-  applyInstallation(plan);
+  console.log(formatPreflight(prepared));
+  const outcome = await applyPreparedInstallation(prepared);
+  if (outcome.status === 'preflight-failed') {
+    console.error('Preflight failed; no files changed. ' + formatPreflight(prepared));
+    process.exitCode = 1; return;
+  }
+  if (outcome.status === 'post-apply-failed') {
+    console.error('Files were installed but post-apply verification failed. Automatic restoration is not yet available. Preserve diagnostics, run doctor, and restart after resolving the failure. ' + JSON.stringify(outcome.report.findings) + ' ' + JSON.stringify(outcome.report.discovery));
+    process.exitCode = 1; return;
+  }
+  for (const probe of outcome.report.discovery.probes || []) console.log(`${probe.host} discovery: ${probe.status} (${probe.classification}). ${probe.reason || 'Native origins observed.'}`);
   console.log(!targets.length
     ? `Removed selected pstack hosts from ${root}. User configuration and other files were preserved.`
-    : `Pstack installed for ${targets.join(', ')} in ${root}. Restart the host to discover skills. No model configuration required.`);
+    : `Pstack files installed for ${targets.join(', ')} in ${root}. Static integrity: ${outcome.report.integrity.status}; discovery: ${outcome.report.discovery.status}. Restart the host to discover skills. No model configuration required.`);
 }
 try {
   const options = parse(process.argv.slice(2));
-  if (options.help) console.log(help); else run(options);
+  if (options.help) console.log(help); else await run(options);
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;
