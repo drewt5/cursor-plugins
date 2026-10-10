@@ -66,10 +66,10 @@ function acquire(path, scope) {
   return { path, token };
 }
 // Internal until the public migration has a directly runnable recovery path.
-export async function withInstallationMutation({ root, opencodeRoot }, mutate) {
+export async function withInstallationMutation({ root, opencodeRoot, opencodeRoots = [] }, mutate) {
   const scope = canonicalPath(root);
   const paths = [safePath(scope, '.pstack/mutation.lock')];
-  if (opencodeRoot) paths.push(safePath(canonicalPath(opencodeRoot), '.pstack-mutation.lock'));
+  for (const external of [...opencodeRoots, ...(opencodeRoot ? [opencodeRoot] : [])]) paths.push(safePath(canonicalPath(external), '.pstack-mutation.lock'));
   const acquired = [];
   const release = () => {
     const errors = [];
