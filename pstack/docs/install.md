@@ -79,3 +79,9 @@ A file or symlink that exists before installation and is absent from the receipt
 Recorded files must match their original content before update or removal. Missing managed artifacts are repaired. Executable modes may be restored when the recorded bytes still match: this repairs the managed file's permissions without overwriting an edit. Modified bytes or replaced symlinks require preserving/restoring the affected file before retrying. `.pstack/models.json` and unrelated files remain outside installer ownership.
 
 Legacy receipts cannot establish whether an older installer adopted an identical pre-existing file. They retain their recorded ownership; this change prevents new adoption and does not invent historical provenance.
+
+## Internal transaction locking
+
+`withInstallationMutation` in `scripts/lib/installation-lock.mjs` is internal until the migration/recovery cutover. It holds canonical-scope locks around the callback that reads the final snapshot, plans, applies, and publishes the receipt. A caller writing a global OpenCode root must supply that root too; its destination lock coordinates scopes sharing the same output. Independent projects remain independent. The ownership planner still rejects unowned output paths after serialization.
+
+Contention fails promptly and identifies the owner and lock path. Inspection checks machine, platform, PID and process start identity; age alone and PID alone never authorize deletion. Dead-owner recovery also requires the exact recorded token. Missing process-inspection capability, different machines, malformed metadata, or disagreeing probes remain unverifiable and are preserved. These are local filesystem locks, not distributed leases. Callback failure and normal process exit release owned locks; abrupt death retains evidence for recovery. Public install, uninstall and dry-run do not acquire these locks yet. The later recovery command must use this same classification before the public cutover.
