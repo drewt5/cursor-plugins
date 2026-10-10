@@ -55,15 +55,26 @@ const server = createServer(async (request, response) => {
 });
 async function run(executable, args, extraEnv = {}) {
   requests = [];
-  const child = spawn(executable, args, { cwd: project, env: { ...env, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(executable, args, { cwd: project, env: { ...env, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
   let output = '', errors = '';
-  child.stdout.on('data', value => { output += value; });
-  child.stderr.on('data', value => { errors += value; });
+  child.stdout.on('data', value => { output = (output + value).slice(-1024 * 1024); });
+  child.stderr.on('data', value => { errors = (errors + value).slice(-1024 * 1024); });
+  let timedOut = false;
+  const kill = signal => {
+    if (!child.pid) return;
+    try { process.platform === 'win32' ? child.kill(signal) : process.kill(-child.pid, signal); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+  };
+  let force;
   const code = await new Promise((resolveCode, reject) => {
-    const timer = setTimeout(() => { child.kill(); reject(new Error(`${executable} invocation timed out: ${errors.slice(-2000)}`)); }, 30000);
-    child.on('error', error => { clearTimeout(timer); reject(error); });
-    child.on('exit', value => { clearTimeout(timer); resolveCode(value); });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      kill('SIGTERM');
+      force = setTimeout(() => kill('SIGKILL'), 1000);
+    }, 30000);
+    child.on('error', error => { clearTimeout(timer); clearTimeout(force); reject(error); });
+    child.on('close', value => { clearTimeout(timer); clearTimeout(force); kill('SIGKILL'); resolveCode(value); });
   });
+  assert.ok(!timedOut, `${executable} invocation timed out: ${errors.slice(-4000)}\n${output.slice(-4000)}`);
   assert.equal(code, 0, `${executable}: ${errors}\n${output.slice(-2000)}`);
   assert.ok(requests.length > 0, `${executable} never reached the local test API: ${output} ${errors}`);
   assert.ok(requests.some(body => JSON.stringify(body).includes('## Non-negotiables') && JSON.stringify(body).includes('pstack-runtime')), `${executable} did not expand poteto-mode into the model request`);
@@ -73,10 +84,10 @@ try {
   const selected = process.argv[2] || 'all';
   assert.ok(['all', 'codex', 'opencode', 'claude-code'].includes(selected), 'Expected all, codex, opencode, or claude-code');
   const install = (target, uninstall = false) => {
-    const result = spawnSync(process.execPath, [join(source, 'scripts/install.mjs'), '--target', target, '--project', project, ...(uninstall ? ['--uninstall'] : [])], { env, encoding: 'utf8' });
+    const result = spawnSync(process.execPath, [join(source, 'scripts/install.mjs'), '--target', target, '--project', project, ...(uninstall ? ['--uninstall'] : [])], { env, encoding: 'utf8', timeout: 30000 });
     assert.equal(result.status, 0, result.stderr);
   };
-  assert.equal(spawnSync('git', ['init', '-q', project], { env }).status, 0);
+  assert.equal(spawnSync('git', ['init', '-q', project], { env, timeout: 15000 }).status, 0);
   await new Promise((ready, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', ready); });
   const base = `http://127.0.0.1:${server.address().port}`;
   if (selected === 'all' || selected === 'claude-code') {
