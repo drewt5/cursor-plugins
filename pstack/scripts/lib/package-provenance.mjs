@@ -40,10 +40,19 @@ export function readSourceProvenance(source) {
   }
   return provenance;
 }
+export function readLegacyProvenance(source) {
+  let version = null;
+  for (const name of ['package.json', 'plugin.json']) {
+    try { const observed = JSON.parse(readFileSync(join(source, name), 'utf8')).version; if (typeof observed === 'string' && semver.test(observed)) { version = observed; break; } } catch {}
+  }
+  return { schemaVersion: 1, version, sourceCommit: null, upstreamCommit: null, packageDigest: packageDigest(source), classification: 'legacy-unknown', dirty: null, tag: null, evidence: 'legacy-owned-content-original-identity-unknown' };
+}
 export function validateProvenance(value) {
-  if (!value || Object.keys(value).some(key => !['schemaVersion', 'version', 'sourceCommit', 'upstreamCommit', 'packageDigest', 'classification', 'dirty', 'tag', 'evidence'].includes(key)) || value.schemaVersion !== 1 || typeof value.version !== 'string' || !semver.test(value.version)
-      || value.sourceCommit !== null && !sha.test(value.sourceCommit) || !sha.test(value.upstreamCommit) || !hash.test(value.packageDigest)
-      || !['release', 'development'].includes(value.classification) || ![true, false, null].includes(value.dirty)
+  const legacy = value?.classification === 'legacy-unknown';
+  if (!value || Object.keys(value).some(key => !['schemaVersion', 'version', 'sourceCommit', 'upstreamCommit', 'packageDigest', 'classification', 'dirty', 'tag', 'evidence'].includes(key)) || value.schemaVersion !== 1 || (legacy && value.version === null ? false : typeof value.version !== 'string' || !semver.test(value.version))
+      || value.sourceCommit !== null && !sha.test(value.sourceCommit) || (legacy && value.upstreamCommit === null ? false : !sha.test(value.upstreamCommit)) || !hash.test(value.packageDigest)
+      || !['release', 'development', 'legacy-unknown'].includes(value.classification) || ![true, false, null].includes(value.dirty)
       || value.tag !== null && value.tag !== `pstack-v${value.version}` || typeof value.evidence !== 'string') throw new Error('Invalid installed provenance');
+  if (legacy && (value.sourceCommit !== null || value.upstreamCommit !== null || value.dirty !== null || value.tag !== null || value.evidence !== 'legacy-owned-content-original-identity-unknown')) throw new Error('Legacy provenance must preserve unknown original identity');
   if (value.classification === 'release' && (!value.sourceCommit || value.dirty !== false || value.tag !== `pstack-v${value.version}`)) throw new Error('Release provenance lacks exact clean tagged identity');
 }

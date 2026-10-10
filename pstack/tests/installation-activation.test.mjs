@@ -65,12 +65,13 @@ test('stale target and receipt plans refuse before journal/path writes, preservi
     assert.equal(readFileSync(join(f.root, target), 'utf8'), 'external edit'); assert.equal(existsSync(join(f.root, journalName)), false);
   }
 });
-test('mandatory discovery failure or diagnostic exception retains verifying journal and never reports success', async t => {
+test('mandatory discovery failure or diagnostic exception restores the prior installation and never reports success', async t => {
   for (const diagnose of [async () => ({ findings: [], discovery: { status: 'failed', probes: [{ status: 'failed' }] } }), () => { throw new Error('diagnostic broke'); }]) {
     const f = compact(t), result = await applyStagedActivation(f.prepared, { diagnose });
-    assert.equal(result.status, 'verification-failed'); const journal = JSON.parse(readFileSync(join(f.root, journalName)));
-    assert.equal(journal.state, 'verifying'); assert.ok(journal.failure); assert.equal(journal.progress, journal.operations.length);
-    assert.ok(existsSync(verifyGeneration(f.root, journal.generation)));
+    assert.equal(result.status, 'verification-failed-restored'); assert.equal(result.restored, true);
+    assert.equal(existsSync(join(f.root, journalName)), false);
+    assert.equal(readFileSync(join(f.root, '.cursor/agents/replace.md'), 'utf8'), 'old');
+    assert.ok(existsSync(verifyGeneration(f.root, f.generation)));
   }
 });
 test('IPC acknowledgment supports a real process kill after stable-link mutation with truthful durable progress', { timeout: 20000 }, async t => {

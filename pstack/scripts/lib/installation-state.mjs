@@ -37,6 +37,9 @@ export function safePath(root, name) {
   }
   return path;
 }
+export function isManagedEntryName(name) {
+  return !name.includes('\\') && name.split('/').every(part => part && part !== '.' && part !== '..') && (name === '.pstack/package' || name === '.pstack/opencode-models.json' || name.startsWith('.pstack/package/') || /^\.agents\/skills\//.test(name) || /^\.(claude|cursor)\/(skills|agents)\//.test(name) || /^(@opencode|\.opencode)\/(skills|agents|commands)\//.test(name));
+}
 export function stateFrom(path) {
   if (!present(path)) return { version: 2, targets: [], entries: {} };
   if (!lstatSync(path).isFile()) throw new Error(`Install manifest is not a regular file: ${path}`);
@@ -57,6 +60,7 @@ export function parseInstallationState(bytes) {
   if (!Array.isArray(state.targets) || state.targets.some(target => !hosts.includes(target))) throw new Error('Invalid installed targets.');
   if (Object.keys(state.entries).some(name => name.startsWith('@opencode/')) && typeof state.opencodeRoot !== 'string') throw new Error('Invalid OpenCode install root.');
   for (const [name, entry] of Object.entries(state.entries)) {
+    if (!isManagedEntryName(name)) throw new Error(`Invalid managed install path: ${name}`);
     if (!entry || !['file', 'link'].includes(entry.kind) || (entry.kind === 'file' ? typeof entry.hash !== 'string' || !/^[a-f0-9]{64}$/.test(entry.hash) : typeof entry.to !== 'string')) throw new Error(`Invalid manifest entry: ${name}`);
     if (entry.kind === 'file' && entry.mode !== undefined && (!Number.isInteger(entry.mode) || entry.mode < 0 || entry.mode > 0o777)) throw new Error(`Invalid manifest mode: ${name}`);
   }
