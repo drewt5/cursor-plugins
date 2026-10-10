@@ -2,7 +2,12 @@
 name: principle-prove-it-works
 description: "Apply after completing a task, before declaring done. Verify against the real artifact (run the feature, read the actual value, inspect the diff), not a proxy, self-report, or 'it compiles.'"
 disable-model-invocation: true
+metadata:
+  opencode/slash: "true"
+  opencode/autoinvoke: "false"
 ---
+
+Before starting, read the **pstack-runtime** skill at `../pstack-runtime/SKILL.md` for host capabilities, model configuration, and fallback behavior.
 
 # Prove It Works
 

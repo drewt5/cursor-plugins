@@ -2,7 +2,12 @@
 name: technical-writing
 description: "Layered technical-writing standard: Diátaxis structure, Google developer style sentences, STE instruction rules, Global English syntax. Use for /technical-writing or when writing or reviewing docs, RFCs, readmes, PR descriptions, or commit messages."
 disable-model-invocation: true
+metadata:
+  opencode/slash: "true"
+  opencode/autoinvoke: "false"
 ---
+
+Before starting, read the **pstack-runtime** skill at `../pstack-runtime/SKILL.md` for host capabilities, model configuration, and fallback behavior.
 
 # Technical writing
 

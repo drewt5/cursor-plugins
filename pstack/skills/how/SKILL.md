@@ -2,13 +2,18 @@
 name: how
 description: "Use for \"how does X work\", code walkthroughs before changing something, and placement / ownership / layering questions (\"where should this live\", \"which package owns this\", \"is this the right layer\"). Explains subsystem architecture, runtime flow, onboarding mental models. Use why for motivation."
 disable-model-invocation: true
+metadata:
+  opencode/slash: "true"
+  opencode/autoinvoke: "false"
 ---
+
+Before starting, read the **pstack-runtime** skill at `../pstack-runtime/SKILL.md` for host capabilities, model configuration, and fallback behavior.
 
 # How
 
 Explore the codebase to answer "how does X work?" questions. Produce architectural explanations at the level of a senior engineer onboarding onto a subsystem, enough to build a working mental model, not so much that it reads like annotated source code.
 
-Each spawn below names a role line in the `pstack-models.mdc` rule and a default. Set `model` to that line's value, or to the default if the rule or the line is missing. Leave `model` unset when the value is `auto` or `inherit-parent`. If the Task tool rejects a slug, use the default and say so. If it rejects the default, use the closest valid slug of the same family from its error message.
+Resolve each named role through **pstack-runtime** and the optional `roles` object in `models.json`. Missing roles inherit the current model. Unsupported model overrides fall back only under the runtime contract.
 
 ## Step 1. Assess Complexity
 
@@ -23,29 +28,29 @@ When in doubt, take the simple path.
 
 Decompose the question into 2 to 4 exploration angles, each a distinct slice of the subsystem. Spawn all explorers in a single message:
 
-- `subagent_type`: `generalPurpose`
-- `model`: the `how explorer` line, default `grok-4.7-xhigh-fast`
-- `readonly`: `true`
+- Worker role: general-purpose
+- `model`: the `how explorer` line, default `inherit-parent`
+- Access: read-only intent, enforced with host permissions where supported
 
 Each explorer gets the prompt in `references/explorer-prompt.md` with its angle filled in. Then go to Step 3.
 
 ## Step 2b. Direct Explain (simple questions)
 
-Spawn one Task subagent that explores and explains in one pass:
+Spawn one worker that explores and explains in one pass:
 
-- `subagent_type`: `generalPurpose`
-- `model`: the `how explainer` line, default `claude-opus-5-5-xhigh`
-- `readonly`: `true`
+- Worker role: general-purpose
+- `model`: the `how explainer` line, default `inherit-parent`
+- Access: read-only intent, enforced with host permissions where supported
 
 Build its prompt from `references/explainer-prompt.md` without the explorer-findings section. Go to Step 4.
 
 ## Step 3. Synthesize (complex questions only)
 
-Once all explorers have returned, spawn one Task subagent to synthesize their findings into one explanation:
+Once all explorers have returned, spawn one worker to synthesize their findings into one explanation:
 
-- `subagent_type`: `generalPurpose`
-- `model`: the `how explainer` line, default `claude-opus-5-5-xhigh`
-- `readonly`: `true`
+- Worker role: general-purpose
+- `model`: the `how explainer` line, default `inherit-parent`
+- Access: read-only intent, enforced with host permissions where supported
 
 Build its prompt from `references/explainer-prompt.md` with every explorer's findings filled in.
 

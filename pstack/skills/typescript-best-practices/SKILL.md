@@ -3,7 +3,12 @@ name: typescript-best-practices
 description: TypeScript best practices. Use when reading or editing any .ts or .tsx file.
 paths: ["**/*.ts", "**/*.tsx"]
 disable-model-invocation: true
+metadata:
+  opencode/slash: "true"
+  opencode/autoinvoke: "false"
 ---
+
+Before starting, read the **pstack-runtime** skill at `../pstack-runtime/SKILL.md` for host capabilities, model configuration, and fallback behavior.
 
 # TypeScript best practices
 

@@ -1,5 +1,7 @@
 # Cursor plugins
 
+This fork adds coding-host support to [pstack](pstack/). See [installation](pstack/docs/install.md) and [fork maintenance](FORK.md).
+
 Official Cursor plugins for popular developer tools, frameworks, and SaaS products. Each plugin is a standalone directory at the repository root with its own `.cursor-plugin/plugin.json` manifest.
 
 ## Plugins

@@ -2,7 +2,12 @@
 name: unslop
 description: Cut AI tells from any writing. Must always apply.
 disable-model-invocation: true
+metadata:
+  opencode/slash: "true"
+  opencode/autoinvoke: "false"
 ---
+
+Before starting, read the **pstack-runtime** skill at `../pstack-runtime/SKILL.md` for host capabilities, model configuration, and fallback behavior.
 
 # Unslop
 

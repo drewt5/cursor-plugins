@@ -1,0 +1,20 @@
+# Portability design
+
+Pstack has one workflow library in `pstack/skills/`. From the repository root, install it with `node pstack/scripts/install.mjs --target all --project PATH`, then invoke the entry skill through the selected host. Paths below are relative to the `pstack/` package. The surrounding repository retains Cursor's layout and Git history; see [fork maintenance](../../FORK.md).
+
+The root portable manifest and Codex, Claude Code, and Cursor manifests identify the same package. OpenCode discovers the Agent Skills files directly. The installer keeps one complete package and links individual skills into supported discovery directories so scripts, references, playbooks, and documentation stay together. Claude Code and OpenCode also receive native agent definitions. Codex uses a general worker with the bundled role prompt when no named role exists.
+
+The `pstack-runtime` skill owns capability resolution, configuration precedence, host-specific tool mapping, history scope, and execution fallbacks. Each skill reads it before starting. Host references document actual discovery conventions. Workflow files describe intent rather than proprietary tool arguments. Model names are opaque, and all unconfigured roles inherit.
+
+We considered generating separate workflow copies for each host. That would make edits diverge and turn each new playbook into several ports. A JavaScript plugin for every host would also add an unnecessary runtime to an instruction library. Shared skills plus native discovery adapters keep workflow changes in one place.
+
+The installer owns only files recorded in `.pstack/install.json`. It preflights conflicts before writing, preserves executable file modes, supports dry runs, repeat installation, additive targets, and targeted removal, and refuses updates or removal of modified owned files. User model configuration stays outside the package. Project installs remain valid when moved. Global installation uses the same skill conventions and the configured OpenCode global agent directory. Uninstallation removes owned files and links, leaving user files and empty directories.
+
+A scheduler, cloud backend, connected service, or particular model cannot be supplied by an instruction package. The runtime detects these capabilities. It runs ordinary work sequentially when delegation is unavailable, labels reduced independence, and leaves an explicitly required independent review unmet. Long runs save a handoff when persistent wakeups are absent. Benny can run against an explicit report in a foreground session or through a configured scheduler. Webhook UIs use the selected service's actual API and secure credential mechanism.
+
+`tests/portability.test.mjs` exercises installation and lifecycle behavior, protects user-owned files, and rejects reintroduced Cursor-only execution parameters in shared workflows. `scripts/check-hosts.mjs` checks real CLI discovery without starting model runs. It validates Claude's manifest and agents and asks Codex and OpenCode for their loaded skill catalogs. Discovery checks do not prove every workflow's model behavior or any unconfigured external service.
+
+
+The model resolver in `skills/pstack-runtime/scripts/models.mjs` validates and merges user, project, and host-specific role preferences. OpenCode requires models on native agents rather than arbitrary per-task parameters, so the installer generates one worker per explicit configured model and records the mapping. Default workers inherit. Native OpenCode command adapters preserve direct slash invocation independently of skill metadata support.
+
+`scripts/check-invocation.mjs` separately installs each requested host in an isolated temporary project, invokes `poteto-mode`, asserts that the real skill body reaches a localhost mock API, and checks the returned result. Claude is also tested as a native plugin with the standalone installation removed. No paid model calls are made; this tests integration, not reasoning quality. Host CLIs and a loopback listener must be available.

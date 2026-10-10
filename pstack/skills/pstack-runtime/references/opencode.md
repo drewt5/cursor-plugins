@@ -1,0 +1,7 @@
+# OpenCode
+
+OpenCode discovers `.agents/skills/`, `.opencode/skills/`, and `.claude/skills/`, plus their documented global counterparts. The pstack installer uses native `.opencode/skills/` project discovery so unrelated global skills cannot shadow the installed library. Global installs use `$XDG_CONFIG_HOME/opencode/skills/` or `~/.config/opencode/skills/`. Load a skill with the native `skill` tool. The installer also writes native `commands/*.md` adapters, so slash invocation does not depend on skill metadata support; natural-language invocation also works.
+
+The installer writes native subagent definitions under `.opencode/agents/` (global: `$XDG_CONFIG_HOME/opencode/agents/` or `~/.config/opencode/agents/`). Default agents inherit. Explicit configured models get generated `pstack-model-*` agents. Read the project `.pstack/opencode-models.json` (or `~/.pstack/opencode-models.json` for a global install) and select the mapped agent using the task tool's real schema. Include the required role instructions and playbook in its brief. After changing model preferences, rerun the installer for OpenCode and reload the host. If a mapping is absent or stale, disclose that before falling back; never pretend a requested model ran. Do not rewrite the user's OpenCode configuration.
+
+Use provider/model identifiers only when reported by the installed host and supported by the operation. Honor task and skill permissions. Background tasks and persistent scheduling are optional, not assumed.

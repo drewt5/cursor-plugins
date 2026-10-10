@@ -1,74 +1,49 @@
 ---
 name: setup-pstack
-description: Configure which models pstack uses per role and at what reasoning budget. Detects your available models and writes an always-applied rule that overrides the skill defaults. Use for /setup-pstack, "configure pstack models", "pstack budget", or changing pstack's model choices.
+description: Configure optional pstack model roles and reasoning preferences for the current host. Use for setup-pstack, configure pstack models, or changing pstack's model choices.
+metadata:
+  opencode/slash: "true"
 ---
+
+Before starting, read the **pstack-runtime** skill at `../pstack-runtime/SKILL.md`.
 
 # Setup pstack
 
-Write `~/.cursor/rules/pstack-models.mdc`, an always-applied rule that sets pstack's model per role.
+Pstack works without configuration. Every role inherits the current model, and review panels use two distinct lenses on that model by default.
 
-## Steps
+1. Inspect the session's delegation capabilities and available model identifiers. Do not invent identifiers or require model enumeration when the host does not expose it.
+2. Read the project `.pstack/models.json` and user `$XDG_CONFIG_HOME/pstack/models.json` or `~/.config/pstack/models.json` if present. Project roles override user roles. Optional `hosts` entries keyed by `codex`, `opencode`, `claude-code`, or `cursor` contain host-specific `roles` and `reasoning`; each host layer overrides its scope’s base layer. Use host-specific entries for provider-specific model IDs. Preserve unrelated role entries and settings.
+3. Ask only for preferences the user has not supplied: project or user scope, model overrides, and optional reasoning effort. Offer inheritance as the default. Explain when the host cannot change models per worker. Reasoning is a separate optional preference, never a model-name suffix.
+4. Show the resulting choices. Validate explicit models against the current host's supported choices. `auto` and `inherit-parent` mean no override. Panels are nonempty arrays, one seat per entry. Keep two inherited seats unless the user chooses a different count.
+5. Write the selected JSON file, preserving other configuration. Do not write Cursor rules or host configuration. Re-running with the same choices leaves the same state.
+6. Run the runtime model resolver for the current host to validate the result. For an installer-managed OpenCode installation, rerun `node <package-root>/scripts/install.mjs --target opencode --project <project-root>` (or `--global` for a user installation), then reload OpenCode. This generates native model agents without changing `opencode.json`.
+7. Report the file and any unsupported preferences. Each workflow reads this file when invoked. Offer a project verification skill only if the user needs one and the project lacks a harness.
 
-### 1. Detect available models
+Example configuration:
 
-Enumerate the model slugs you can pass to a `Task` subagent in this session. That is the dependable source. If Cursor also exposes a models API or CLI that lists the user's entitled models, prefer it for completeness. If you cannot detect any, ask the user to paste the slugs they have access to. Never write a real slug you have not confirmed is available. The aliases `inherit-parent` and `auto` are always valid even though they are not detected slugs.
-
-### 2. Load current state
-
-The default role-to-model mapping is the rule shape shown in step 5 below. If `~/.cursor/rules/pstack-models.mdc` already exists, read it and treat its `# budget` line and its role values as the current choices. Otherwise start from those defaults. A line whose role is not in step 5, such as `how critics`, is from a retired role. Drop it.
-
-### 3. Budget, map, and confirm
-
-**(a) Ask for a budget.** Prefer AskQuestion over free text. Offer these four options with these exact labels, and name the current budget when the rule records one. With no rule, say that `large` matches the skill defaults.
-
-- `unlimited — max reasoning`
-- `large — xhigh reasoning`
-- `medium — high reasoning`
-- `small — medium reasoning`
-
-**(b) Apply it.** Build the working table from the skill defaults, and on a re-run keep any role you changed by family, list, or alias (`inherit-parent`, `auto`). `unlimited`, `large`, `medium`, and `small` set the effort token of every real slug, panel entries included, to `max`, `xhigh`, `high`, or `medium`. The effort token is the last token, or the one before a trailing `fast`, on the ladder `max` > `xhigh` > `high` > `medium` > `low`. If the result is not a detected slug, use the same family's detected slug with the highest effort at or below the target, else mark the role as needing a choice. `inherit-parent` and `auto` do not change. So `unlimited` turns `claude-opus-5-5-xhigh` into `claude-opus-5-5-max`. Grok slugs top out at `xhigh`, so under `unlimited` the fallback puts Grok at `xhigh` and keeps `grok-4.7-xhigh-fast` as it is. `large` keeps both defaults. `small` turns them into `claude-opus-5-5-medium` and `grok-4.7-medium-fast`.
-
-**(c) Show the roles and confirm.** Show every role with its model, marking any real slug not in the detected set as needing a choice. Also list each line step 2 dropped. Ask whether to accept as-is or change specific roles, offering the detected models plus `inherit-parent` and `auto` (both mean: this role runs on the parent chat model, which is how Auto users stay on Auto) as the options. Prefer AskQuestion over free text. For panel roles (arena runners, architect runners, interrogate reviewers) the value is a list, and one subagent runs per entry, alias entries included, so the list length sets the count. `arena cross-judge pool` is also a list, but Arena selects one value from it whose model family differs from the parent's when possible. `swarm workers` is the default model for every worker unless a race or comparison assigns another model per arm.
-
-### 4. Validate
-
-Every real slug written must be in the detected set. `inherit-parent` and `auto` always pass. If a chosen real slug is not available, stop and ask again.
-
-### 5. Write the rule
-
-Write `~/.cursor/rules/pstack-models.mdc` with `alwaysApply: true`, a `# budget` line with the chosen label and its target effort, and one line per role, using the same labels poteto-mode uses. Overwrite the whole file so re-runs stay idempotent. Shape:
-
-```
----
-description: pstack per-role model choices (overrides skill defaults)
-alwaysApply: true
----
-# pstack model configuration. One line per role. Delete a line to fall back to the skill default.
-# `inherit-parent` or `auto` as a value: the role runs on the parent chat model (omit Task `model`). Alias entries in a panel list still count toward its fan-out.
-# budget: large (xhigh)
-feature, refactoring: grok-4.7-xhigh-fast
-bug-fix: grok-4.7-xhigh-fast
-perf-issue: grok-4.7-xhigh-fast
-hillclimb: grok-4.7-xhigh-fast
-judgment and prose: claude-opus-5-5-xhigh
-hardest tasks: claude-opus-5-5-xhigh
-how explorer: grok-4.7-xhigh-fast
-how explainer: claude-opus-5-5-xhigh
-why investigators: grok-4.7-xhigh-fast
-why synthesizer: claude-opus-5-5-xhigh
-reflect tooling: grok-4.7-xhigh-fast
-reflect judgment, divergent, synthesizer: claude-opus-5-5-xhigh
-arena runners: claude-opus-5-5-xhigh, grok-4.7-xhigh-fast
-arena cross-judge pool: claude-opus-5-5-xhigh, grok-4.7-xhigh-fast
-swarm workers: grok-4.7-xhigh-fast
-architect runners: claude-opus-5-5-xhigh, grok-4.7-xhigh-fast
-interrogate reviewers: claude-opus-5-5-xhigh, grok-4.7-xhigh-fast
+```json
+{
+  "version": 1,
+  "roles": {
+    "feature, refactoring": "inherit-parent",
+    "bug-fix": "inherit-parent",
+    "perf-issue": "inherit-parent",
+    "hillclimb": "inherit-parent",
+    "judgment and prose": "inherit-parent",
+    "hardest tasks": "inherit-parent",
+    "how explorer": "inherit-parent",
+    "how explainer": "inherit-parent",
+    "why investigators": "inherit-parent",
+    "why synthesizer": "inherit-parent",
+    "reflect tooling": "inherit-parent",
+    "reflect judgment, divergent, synthesizer": "inherit-parent",
+    "arena runners": ["inherit-parent", "inherit-parent"],
+    "arena cross-judge pool": ["inherit-parent"],
+    "swarm workers": "inherit-parent",
+    "architect runners": ["inherit-parent", "inherit-parent"],
+    "interrogate reviewers": ["inherit-parent", "inherit-parent"]
+  }
+}
 ```
 
-### 6. Confirm
-
-Tell the user the rule was written and that it applies to new sessions. Re-running this skill updates it.
-
-### 7. Offer a verification skill (optional)
-
-Check whether the project has a way to drive the real app for proof (a `verify-*` skill, or an existing harness). If not, offer once: "want a project-local verification skill, so agents can drive the app the way a user does and prove changes work? I can generate one with /create-verification-skill." On yes, invoke `/create-verification-skill` (resolves wherever pstack is installed: workspace, user, or plugin). On no, move on without pushing.
+Optional `reasoning` is a string preference supported by the active host. Omit it to inherit. An unavailable reasoning setting is reported and left to the host default. Invalid JSON or invalid role types must be reported, not silently treated as a valid configuration.

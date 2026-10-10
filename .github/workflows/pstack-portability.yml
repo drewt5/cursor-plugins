@@ -1,0 +1,22 @@
+name: Pstack portability
+on:
+  push:
+    paths: ["pstack/**", ".claude-plugin/marketplace.json", ".github/workflows/pstack-portability.yml"]
+  pull_request:
+    paths: ["pstack/**", ".claude-plugin/marketplace.json", ".github/workflows/pstack-portability.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  portable:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: oven-sh/setup-bun@v2
+      - run: node pstack/scripts/test.mjs --portable --repeat 2
