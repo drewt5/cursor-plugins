@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { observeHost, loadHosts } from './lib/tested-hosts.mjs';
-import { codexSkills } from './lib/native-catalog.mjs';
+import { inspectNativeDiscovery, inspectClaudePlugin } from './lib/installation-discovery.mjs';
 import { checkScopeContracts } from './lib/scope-contracts.mjs';
 import { isolatedEnvironment } from './lib/test-environment.mjs';
 import assert from 'node:assert/strict';
@@ -38,13 +38,9 @@ try {
   assert.ok(['all', 'codex', 'opencode', 'claude-code'].includes(host), 'Expected all, codex, opencode, or claude-code');
   for (const row of loadHosts().filter(row => host === 'all' || row.host === host)) observeHost(row.host, { ...isolated, PSTACK_HOST_VERSION: process.env.PSTACK_HOST_VERSION || '' });
   if (host === 'all' || host === 'claude-code') {
-    command('claude', ['plugin', 'validate', source]);
-    const inventory = command('claude', ['--plugin-dir', source, 'plugin', 'details', 'pstack']);
-    const skills = inventory.match(/^\s+Skills \(\d+\)\s+(.+)$/m);
-    const agents = inventory.match(/^\s+Agents \(\d+\)\s+(.+)$/m);
-    assert.ok(skills && agents, `Claude did not return its plugin component inventory: ${inventory}`);
-    checkNames(skills[1].split(', '));
-    assert.deepEqual(agents[1].split(', ').sort(), ['comment-sicko', 'poteto-agent']);
+    const inventory = await inspectClaudePlugin({ executable: 'claude', source, project, env: isolated, environmentOwnership: 'isolated-test' });
+    checkNames(inventory.skills);
+    assert.deepEqual(inventory.agents.sort(), ['comment-sicko', 'poteto-agent']);
     console.log(`Claude Code: manifest validated; all ${expected.length} skills and both plugin agents discovered.`);
   }
   if (host === 'all' || host === 'opencode') {
@@ -52,23 +48,19 @@ try {
     writeFileSync(join(project, '.pstack/models.json'), JSON.stringify({ version: 1, hosts: { opencode: { roles: { 'bug-fix': 'pstack-fixture/test' } } } }));
     install('opencode');
     const env = { XDG_CONFIG_HOME: join(temporary, 'config'), XDG_DATA_HOME: join(temporary, 'data'), XDG_CACHE_HOME: join(temporary, 'cache'), XDG_STATE_HOME: join(temporary, 'state'), OPENCODE_DISABLE_MODELS_FETCH: 'true' };
-    const skills = JSON.parse(command('opencode', ['--pure', 'debug', 'skill'], env));
-    checkNames(skills.filter(skill => skill.location.replaceAll('\\', '/').includes('/project/')).map(skill => skill.name));
-    const agent = JSON.parse(command('opencode', ['--pure', 'debug', 'agent', 'poteto-agent'], env));
-    assert.equal(agent.name, 'poteto-agent');
-    assert.equal(agent.mode, 'subagent');
     const mapping = JSON.parse(readFileSync(join(project, '.pstack/opencode-models.json'), 'utf8'));
-    const modelAgent = JSON.parse(command('opencode', ['--pure', 'debug', 'agent', mapping.agents['pstack-fixture/test']], env));
-    assert.match(JSON.stringify(modelAgent.model), /pstack-fixture/);
+    const discovery = await inspectNativeDiscovery({ host: 'opencode', executable: 'opencode', project, scope: 'project', env: { ...isolated, ...env }, expected, bundles: [join(project, '.pstack/package')], agents: ['poteto-agent', 'comment-sicko', mapping.agents['pstack-fixture/test']], actualVersion: process.env.PSTACK_HOST_VERSION || loadHosts().find(row => row.host === 'opencode').version, environmentOwnership: 'isolated-test' });
+    assert.equal(discovery.status, 'observed', JSON.stringify(discovery));
+    assert.equal(discovery.classification, 'identified-source', JSON.stringify(discovery));
+    assert.match(JSON.stringify(discovery.agents.at(-1).model), /pstack-fixture/);
     install('opencode', true);
     console.log(`OpenCode: all ${expected.length} skills and native subagent discovered.`);
   }
   if (host === 'all' || host === 'codex') {
     install('codex');
-    const result = await codexSkills(project, isolated);
-    const entry = result.data[0];
-    assert.deepEqual(entry.errors, []);
-    checkNames(entry.skills.filter(skill => skill.path.replaceAll('\\', '/').includes('/project/')).map(skill => skill.name));
+    const discovery = await inspectNativeDiscovery({ host: 'codex', executable: 'codex', project, scope: 'project', env: isolated, expected, bundles: [join(project, '.pstack/package')], actualVersion: process.env.PSTACK_HOST_VERSION || loadHosts().find(row => row.host === 'codex').version, environmentOwnership: 'isolated-test' });
+    assert.equal(discovery.status, 'observed', JSON.stringify(discovery));
+    assert.equal(discovery.classification, 'identified-source', JSON.stringify(discovery));
     console.log(`Codex: all ${expected.length} skills discovered with no loading errors.`);
   }
   await checkScopeContracts({ host, source, expected });
