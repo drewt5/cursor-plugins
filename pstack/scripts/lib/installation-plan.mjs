@@ -21,14 +21,18 @@ export function planInstallation(snapshot, artifacts) {
   const operations = [];
   for (const [path, before] of Object.entries(snapshot.observed)) {
     const old = previous.get(path), next = wanted.get(path);
-    const modified = old && before.kind !== 'absent' && !matches(path, before, old.entry) && !matches(path, before, next?.entry);
-    const collision = next && !old && before.kind !== 'absent' && !matches(path, before, next.entry);
-    const conflict = modified || collision;
+    const modified = old && before.kind !== 'absent' && !matches(path, before, old.entry);
+    const collision = next && !old && before.kind !== 'absent';
+    const unsafe = before.kind === 'unsafe-parent';
+    const conflict = unsafe || modified || collision;
     const unchanged = next && matches(path, before, next.entry) && (next.entry.kind !== 'file' || next.entry.mode === undefined || next.entry.mode === before.mode);
     const action = conflict ? 'conflict' : next ? unchanged ? 'unchanged' : before.kind === 'absent' ? 'create' : 'replace' : before.kind === 'absent' ? 'unchanged' : 'remove';
     const name = next?.name ?? old.name;
-    operations.push({ path, name, owner: owner(name), before, intended: next?.entry ?? { kind: 'absent' }, action,
-      reason: modified ? 'Locally modified pstack file; preserve or move it before retrying' : collision ? 'Install conflict; no files changed. Use a project installation or move the conflicting skill yourself' : next ? 'Desired installation artifact' : 'No longer selected' });
+    const attempted = next ? before.kind === 'absent' ? 'create' : 'replace' : 'remove';
+    const wrongKind = before.kind !== 'absent' && before.kind !== (old?.entry ?? next?.entry).kind;
+    const code = unsafe ? 'unsafe-parent' : conflict ? wrongKind ? 'wrong-path-kind' : old ? 'modified-owned' : 'unowned' : null;
+    operations.push({ path, name, ownership: old ? 'managed' : 'unowned', attempted, code, owner: owner(name), before, intended: next?.entry ?? { kind: 'absent' }, action,
+      reason: unsafe ? `${before.error}. No files changed; choose a project path without symlinked host directories or restore the intended directory yourself` : modified ? 'Locally modified pstack file; preserve or move it before retrying' : collision ? 'Install conflict: unowned content, including identical content, cannot be adopted; no files changed. Choose a separate project installation to preserve existing skills, or resolve this path yourself' : next ? 'Desired installation artifact' : 'No longer selected' });
   }
   return { snapshot, artifacts, operations, conflicts: operations.filter(op => op.action === 'conflict') };
 }

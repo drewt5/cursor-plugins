@@ -71,3 +71,11 @@ MIT. Original copyright retained.
 Add `--dry-run` to the same install or uninstall command to inspect a read-only JSON plan. Each operation includes its path, observed state, intended state, owning host/shared package, action (`create`, `replace`, `remove`, `unchanged`, or `conflict`), and reason. Conflicts are collected together and exit unsuccessfully without changing destination files. Apply checks that the inspected files and receipt have not changed before writing.
 
 The command entry points share `scripts/lib/installation-state.mjs` (validated receipts and destination snapshots), `installation-artifacts.mjs` (package/configuration rendering), and `installation-plan.mjs` (planning and apply). Downstream lifecycle work should consume these interfaces rather than duplicate ownership checks. This planner does not make a multi-file update transactional; recoverable activation remains separate work.
+
+## Ownership conflicts
+
+A file or symlink that exists before installation and is absent from the receipt remains user-owned even when its bytes or destination match pstack. Install reports every conflict before writing, with ownership, attempted operation, path kind, and remedy. Use a separate project installation to keep an existing same-name skill; pstack does not adopt, disable, or remove it.
+
+Recorded files must match their original content before update or removal. Missing managed artifacts are repaired. Executable modes may be restored when the recorded bytes still match: this repairs the managed file's permissions without overwriting an edit. Modified bytes or replaced symlinks require preserving/restoring the affected file before retrying. `.pstack/models.json` and unrelated files remain outside installer ownership.
+
+Legacy receipts cannot establish whether an older installer adopted an identical pre-existing file. They retain their recorded ownership; this change prevents new adoption and does not invent historical provenance.

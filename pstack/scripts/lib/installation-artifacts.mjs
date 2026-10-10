@@ -5,7 +5,7 @@ import { digest, files, pathFor as resolvePath } from './installation-state.mjs'
 
 export function renderArtifacts({ source, root, targets, opencodeRoot, global = false, config }) {
   const options = { global };
-  const pathFor = (name, state) => resolvePath(root, name, state);
+  const pathFor = (name, state) => resolvePath(root, name, state, false);
   const plannedState = { version: 2, targets, opencodeRoot, entries: {} };
   const planned = plannedState.entries;
   const contents = new Map();

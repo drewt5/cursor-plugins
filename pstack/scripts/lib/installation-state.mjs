@@ -18,9 +18,13 @@ export function canonicalPath(path) {
   if (existsSync(path)) return realpathSync(path);
   return join(canonicalPath(dirname(path)), basename(path));
 }
-export function safePath(root, name) {
+export function installationPath(root, name) {
   const path = resolve(root, name);
   if (isAbsolute(name) || path === root || !path.startsWith(root + sep)) throw new Error(`Invalid install path: ${name}`);
+  return path;
+}
+export function safePath(root, name) {
+  const path = installationPath(root, name);
   for (let parent = dirname(path); parent !== root; parent = dirname(parent)) {
     const stat = present(parent);
     if (stat?.isSymbolicLink()) throw new Error(`Refusing to write through symlink: ${parent}`);
@@ -43,8 +47,9 @@ export function stateFrom(path) {
   return state;
 }
 
-export function pathFor(root, name, state) {
-  return name.startsWith('@opencode/') ? safePath(resolve(root, state.opencodeRoot), name.slice('@opencode/'.length)) : safePath(root, name);
+export function pathFor(root, name, state, inspectParents = true) {
+  const locate = inspectParents ? safePath : installationPath;
+  return name.startsWith('@opencode/') ? locate(resolve(root, state.opencodeRoot), name.slice('@opencode/'.length)) : locate(root, name);
 }
 export function observe(path) {
   const stat = present(path);
@@ -57,9 +62,16 @@ export function observe(path) {
 export function installationSnapshot({ root, desired, statePath = safePath(root, '.pstack/install.json') }) {
   root = canonicalPath(root);
   const previous = stateFrom(statePath);
-  const owned = Object.entries(previous.entries).map(([name, entry]) => ({ name, entry, path: pathFor(root, name, previous) }));
-  const wanted = Object.entries(desired.entries).map(([name, entry]) => ({ name, entry, path: pathFor(root, name, desired) }));
+  const owned = Object.entries(previous.entries).map(([name, entry]) => ({ name, entry, path: pathFor(root, name, previous, false) }));
+  const wanted = Object.entries(desired.entries).map(([name, entry]) => ({ name, entry, path: pathFor(root, name, desired, false) }));
   const paths = [...new Set([...owned, ...wanted].map(item => item.path))].sort();
+  const observed = {};
+  for (const path of paths) {
+    const item = wanted.find(item => item.path === path) ?? owned.find(item => item.path === path);
+    const state = wanted.includes(item) ? desired : previous;
+    try { pathFor(root, item.name, state); observed[path] = observe(path); }
+    catch (error) { observed[path] = { kind: 'unsafe-parent', error: error.message }; }
+  }
   return { root, statePath, previous, targets: previous.targets, opencodeRoot: desired.opencodeRoot,
-    owned, wanted, observed: Object.fromEntries(paths.map(path => [path, observe(path)])), receipt: observe(statePath) };
+    owned, wanted, observed, receipt: observe(statePath) };
 }
