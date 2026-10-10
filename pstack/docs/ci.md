@@ -1,5 +1,35 @@
 # Verify a pstack pull request
 
+## Keep the PR branch current
+
+Before declaring work complete, verify both branch freshness and checks. Start in the PR's clean worktree with the task claim held. Confirm the PR's base and source head:
+
+```sh
+gh pr view PR_NUMBER --repo drewt5/cursor-plugins --json baseRefName,headRefOid,url
+git rev-parse HEAD
+```
+
+The local `HEAD` must match the PR's `headRefOid` before using local ancestry as evidence for that PR. For a PR targeting `main`, run:
+
+```sh
+git fetch origin main
+git rev-parse origin/main
+git merge-base --is-ancestor origin/main HEAD
+```
+
+An ancestry exit code of 0 means the fetched base is included; 1 means the branch needs updating. Other errors are not proof of freshness. For a stacked PR, substitute its actual base branch. After its prerequisite merges, retarget to `main` and repeat verification.
+
+If the branch is behind, merge the fetched base into the owned PR branch, resolve conflicts, run the checks relevant to the resolution, and push. For a normal PR:
+
+```sh
+git merge origin/main
+git push
+```
+
+Do not reset or overwrite another agent's work. If you use a rebase on your own branch, preserve the upstream-sync ancestry requirements in `FORK.md` and use an explicit lease for any rewritten push. Wait for checks on the new PR head using the protocol below. A conflict-free merge or an earlier green run is not verification of the updated branch.
+
+Immediately before handoff, fetch the base again, repeat the ancestry check, and read the PR head again. If the head changed or the base is no longer included, repeat the update and verification cycle. Record the verified base SHA, PR head SHA, and check run in the handoff. If updates or checks cannot finish, report the work as pending rather than complete. This establishes freshness at handoff; a later base change requires a new check before merge.
+
 ## Monitor the current revision
 
 1. Record the PR's source head and URL. Select the fork that hosts the PR explicitly because GitHub CLI can infer the upstream repository from a fork checkout.
