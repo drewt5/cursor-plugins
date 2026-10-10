@@ -11,7 +11,7 @@ export function mandatoryDiscoveryFailures(report) {
   if (report.discovery.status === 'failed' && !(report.discovery.probes || []).length) return [{ host: 'selected hosts', status: 'failed', classification: 'invalid-evidence' }];
   return (report.discovery.probes || []).filter(probe => probe.status === 'failed' || probe.status === 'observed' && ['ambiguous-sources', 'conflicting-registration', 'missing-registration', 'invalid-evidence'].includes(probe.classification));
 }
-export async function prepareInstallation({ source, root, globalRoot, options, env = process.env, diagnose = inspectExistingInstallation, versionProbe = probeHostVersion, render = renderArtifacts }) {
+export async function prepareInstallation({ source, root, globalRoot, options, env = process.env, diagnose = inspectExistingInstallation, versionProbe = probeHostVersion, render = renderArtifacts, opencodeRootOverride }) {
   const observations = new Map();
   const probe = row => {
     if (options.uninstall) return skippedVersion(row);
@@ -27,7 +27,7 @@ export async function prepareInstallation({ source, root, globalRoot, options, e
   }
   const { selected } = selectInstallationTargets(options, previous, { root, probe, validate: false });
   const targets = options.uninstall ? previous.targets.filter(target => !selected.includes(target)) : [...new Set([...previous.targets, ...selected])].sort();
-  const opencodeRoot = options.global ? canonicalPath(resolve(env.XDG_CONFIG_HOME || join(root, '.config'), 'opencode')) : '.opencode';
+  const opencodeRoot = opencodeRootOverride ?? (options.global ? canonicalPath(resolve(env.XDG_CONFIG_HOME || join(root, '.config'), 'opencode')) : '.opencode');
   const hostObservations = options.uninstall ? (previous.version >= 3 ? previous.hostObservations : []).filter(item => targets.includes(item.host)) : loadHosts().filter(row => targets.includes(row.host)).map(row => { const observed = probe(row); return { host: row.host, version: observed.evidence.actualVersion ?? null, status: observed.evidence.actualVersion ? 'observed' : 'unavailable' }; });
   const artifacts = await render({ source, root, targets, opencodeRoot, global: options.global, hostObservations });
   const snapshot = installationSnapshot({ root, desired: artifacts.state });

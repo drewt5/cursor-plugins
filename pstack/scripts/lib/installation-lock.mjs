@@ -6,7 +6,7 @@ import { dirname } from 'node:path';
 import { canonicalPath, present, safePath } from './installation-state.mjs';
 
 function processStart(pid) {
-  const result = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', timeout: 3000, env: { ...process.env, LC_ALL: 'C' } });
+  const result = spawnSync(process.platform === 'darwin' ? '/bin/ps' : '/usr/bin/ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', timeout: 3000, env: { ...process.env, LC_ALL: 'C' } });
   if (result.error || ![0, 1].includes(result.status)) return { known: false };
   const start = result.stdout.trim();
   return { known: true, start: start || null };
@@ -53,7 +53,7 @@ function acquire(path, scope) {
   catch (error) {
     if (error.code !== 'EEXIST') throw error;
     const result = inspectInstallationLock(path);
-    throw new Error(`Installation busy (${result.status}): ${path}; owner ${JSON.stringify(result.owner ?? null)}. No mutation started. Inspect this lock; ${result.status === 'dead' ? 'use internal recoverInstallationLock with the recorded token after inspection' : 'finish the owning operation or establish its identity before recovery'}.`);
+    throw new Error(`Installation busy (${result.status}): ${path}; owner ${JSON.stringify(result.owner ?? null)}. No mutation started. Inspect this lock; ${result.status === 'dead' ? 'run the shipped recover.mjs command for this scope with --recover-dead-locks' : 'finish the owning operation or establish its identity before recovery'}.`);
   }
   const token = randomUUID(), stat = lstatSync(path);
   try {
@@ -65,7 +65,7 @@ function acquire(path, scope) {
   } finally { closeSync(descriptor); }
   return { path, token };
 }
-// Internal until the public migration has a directly runnable recovery path.
+// Public mutations retain the exact recovery executable before activation.
 export async function withInstallationMutation({ root, opencodeRoot, opencodeRoots = [] }, mutate) {
   const scope = canonicalPath(root);
   const paths = [safePath(scope, '.pstack/mutation.lock')];

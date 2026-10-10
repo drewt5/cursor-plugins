@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import { installLegacy } from '../tests/fixtures/legacy-installation.mjs';
 import { prepareStagedActivation, applyStagedActivation } from './lib/installation-activation.mjs';
 import { rollbackInstallation } from './lib/installation-rollback.mjs';
 import { removeInstallation } from './lib/installation-removal.mjs';
+import { stateFrom } from './lib/installation-state.mjs';
 import { stagePackage, renderStagedArtifacts, verifyGeneration } from './lib/installation-storage.mjs';
 import { observeHost, loadHosts } from './lib/tested-hosts.mjs';
 import { inspectNativeDiscovery, inspectClaudePlugin } from './lib/installation-discovery.mjs';
@@ -44,6 +46,7 @@ try {
       const path = join(project, name.replace('@opencode/', '.opencode/'));
       assert.equal(readFileSync(path, 'utf8'), bytes.toString(), `Retained renderer differs: ${name}`);
     }
+    if (stateFrom(join(project, '.pstack/install.json')).version === 4) return () => {};
     rmSync(join(project, '.pstack/package'), { recursive: true });
     symlinkSync(artifacts.state.entries['.pstack/package'].to, join(project, '.pstack/package'));
     return () => {
@@ -101,6 +104,18 @@ try {
     assert.equal(discovery.status, 'observed', JSON.stringify(discovery));
     assert.equal(discovery.classification, 'identified-source', JSON.stringify(discovery));
     console.log(`Codex: all ${expected.length} skills discovered with no loading errors.`);
+  }
+  if (host === 'all' || ['codex', 'opencode'].includes(host)) for (const legacyHost of ['codex', 'opencode'].filter(value => host === 'all' || host === value)) {
+    const legacyProject = join(temporary, 'legacy-' + legacyHost); mkdirSync(legacyProject);
+    const schema = legacyHost === 'codex' ? 1 : 2; installLegacy({ source, root: legacyProject, targets: [legacyHost], schema });
+    const args = ['--project', legacyProject];
+    command(process.execPath, [join(source, 'scripts/install.mjs'), ...args]);
+    command(process.execPath, [join(source, 'scripts/rollback.mjs'), ...args]);
+    const legacyDiscovery = await inspectNativeDiscovery({ host: legacyHost, executable: legacyHost, project: legacyProject, scope: 'project', env: isolated, expected, bundles: [join(legacyProject, '.pstack/package')], ...(legacyHost === 'opencode' ? { agents: ['poteto-agent', 'comment-sicko'] } : {}), actualVersion: process.env.PSTACK_HOST_VERSION || loadHosts().find(row => row.host === legacyHost).version, environmentOwnership: 'isolated-test' });
+    assert.equal(legacyDiscovery.classification, 'identified-source', JSON.stringify(legacyDiscovery));
+    command(process.execPath, [join(source, 'scripts/install.mjs'), ...args]); command(process.execPath, [join(source, 'scripts/uninstall.mjs'), ...args]);
+    assert.equal(stateFrom(join(legacyProject, '.pstack/install.json')).targets.length, 0);
+    console.log(`${legacyHost}: schema-${schema} legacy layout migrated, rolled back, native-discovered, updated and uninstalled through public commands.`);
   }
   await checkScopeContracts({ host, source, expected });
 } catch (error) {

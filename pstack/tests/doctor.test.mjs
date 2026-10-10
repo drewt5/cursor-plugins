@@ -41,7 +41,7 @@ test('broken artifacts, malformed receipts and missing selected executables are 
   const f = fixture(t); f.install('codex');
   let result = f.doctor([], { ...f.env, PATH: '' }); assert.equal(result.status, 1); assert.ok(JSON.parse(result.stdout).findings.some(item => item.code === 'HOST_MISSING' && item.action));
   const file = join(f.project, '.pstack/package/README.md'); writeFileSync(file, 'user edit'); const before = snapshot(f.root);
-  result = f.doctor(); assert.equal(result.status, 1); assert.ok(JSON.parse(result.stdout).findings.some(item => item.code === 'OWNED_MODIFIED' && item.action)); assert.deepEqual(snapshot(f.root), before);
+  result = f.doctor(); assert.equal(result.status, 1); assert.ok(JSON.parse(result.stdout).findings.some(item => item.code === 'GENERATION_INVALID' && item.action)); assert.deepEqual(snapshot(f.root), before);
   writeFileSync(join(f.project, '.pstack/install.json'), '{broken'); result = f.doctor(); assert.equal(result.status, 1); assert.equal(JSON.parse(result.stdout).receipt.status, 'invalid');
 });
 test('unknown versions and recorded ambiguity remain explicit advisory unknowns; unrelated plugin changes retain visibility limit', t => {

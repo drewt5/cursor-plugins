@@ -72,3 +72,11 @@ test('identical payload reuses verified stored identity even when the selected s
   const reused = stagePackage({ source, root });
   assert.equal(reused.reused, true); assert.deepEqual(reused.provenance, first.provenance);
 });
+test('unowned stored special files are rejected before a body read can block on a named pipe', t => {
+  const { source, root } = fixture(t), generation = stagePackage({ source, root }), pipe = join(root, generation.name, 'user-pipe');
+  const created = spawnSync('/usr/bin/mkfifo', [pipe], { encoding: 'utf8', timeout: 2000 }); assert.equal(created.status, 0, created.stderr);
+  const module = new URL('../scripts/lib/installation-storage.mjs', import.meta.url).href;
+  const program = `import { verifyGeneration } from ${JSON.stringify(module)}; try { verifyGeneration(${JSON.stringify(root)}, ${JSON.stringify(generation)}); process.exit(99); } catch (error) { console.log(error.message); }`;
+  const checked = spawnSync(process.execPath, ['--input-type=module', '-e', program], { encoding: 'utf8', timeout: 2000 });
+  assert.equal(checked.status, 0, checked.error?.message || checked.stderr); assert.match(checked.stdout, /Unexpected stored path kind: user-pipe/); assert.equal(existsSync(pipe), true);
+});

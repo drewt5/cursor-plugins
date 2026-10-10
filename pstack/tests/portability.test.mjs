@@ -1,3 +1,4 @@
+import { installLegacy } from './fixtures/legacy-installation.mjs';
 import { withHostVersionFixtures } from './fixtures/host-versions.mjs';
 import test, { after } from 'node:test';
 import { createHash } from 'node:crypto';
@@ -87,7 +88,7 @@ test('updates and uninstall preserve modified owned files', t => {
   for (const args of [[], ['--uninstall']]) {
     const result = install(dir, 'all', args);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /Locally modified/);
+    assert.match(result.stderr, /Locally modified|GENERATION_INVALID/);
     assert.equal(readFileSync(file, 'utf8'), 'local edit');
   }
 });
@@ -154,7 +155,7 @@ test('installer rejects a destination inside its own source tree', () => {
 
 test('updates replace an unmodified prior version and restore missing owned links', t => {
   const dir = fixture(t);
-  ok(install(dir, 'codex'));
+  installLegacy({ source: root, root: dir, targets: ['codex'] });
   const name = '.pstack/package/README.md';
   const manifestPath = join(dir, '.pstack/install.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));

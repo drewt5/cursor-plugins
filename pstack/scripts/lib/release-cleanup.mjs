@@ -1,17 +1,18 @@
-import { readFileSync, readdirSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, rmSync, rmdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { readActivationJournal } from './activation-journal.mjs';
 import { canonicalPath, present, safePath, stateFrom } from './installation-state.mjs';
 import { validateGeneration } from './generation-contract.mjs';
 import { verifyGeneration } from './installation-storage.mjs';
 export const ownershipName = digest => `.pstack/releases/.owned-${digest}.json`;
+export const inventoryName = digest => `.pstack/releases/.inventory-${digest}.json`;
 export function cleanupReleases(root) {
   root = canonicalPath(root); const directory = safePath(root, '.pstack/releases');
   const result = { removed: [], preserved: [] }; if (!present(directory)) return result;
   const state = stateFrom(safePath(root, '.pstack/install.json')), journal = readActivationJournal(root);
   const protectedDigests = new Set([state.generation, state.previous?.state.generation, journal?.generation, journal?.recoveryGeneration, journal?.legacyGeneration, journal?.priorReceipt.generation, journal?.priorReceipt.previous?.state.generation, journal?.intendedReceipt.generation, journal?.intendedReceipt.previous?.state.generation].filter(Boolean).map(value => value.digest));
   for (const name of readdirSync(directory)) {
-    if (name.startsWith('.owned-')) continue;
+    if (name.startsWith('.owned-') || name.startsWith('.inventory-')) continue;
     const path = safePath(root, `.pstack/releases/${name}`);
     if (protectedDigests.has(name)) continue;
     try {
@@ -20,8 +21,15 @@ export function cleanupReleases(root) {
       if (!present(marker)?.isFile()) throw new Error('No local storage ownership evidence');
       const generation = JSON.parse(readFileSync(marker)); validateGeneration(generation);
       if (generation.digest !== name) throw new Error('Storage ownership differs from directory');
-      verifyGeneration(root, generation); rmSync(path, { recursive: true }); rmSync(marker); result.removed.push(path);
+      verifyGeneration(root, generation); rmSync(path, { recursive: true }); rmSync(marker); rmSync(safePath(root, inventoryName(name))); result.removed.push(path);
     } catch (error) { result.preserved.push({ path, reason: error.message, action: 'Preserve or move this content yourself before retrying cleanup/uninstall.' }); }
   }
   return result;
+}
+
+export function removeEmptyStorage(root) {
+  for (const name of ['.pstack/releases', '.pstack']) {
+    const path = safePath(root, name);
+    try { if (!readdirSync(path).length) rmdirSync(path); } catch (error) { if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code)) throw error; }
+  }
 }

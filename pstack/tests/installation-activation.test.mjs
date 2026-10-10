@@ -28,7 +28,7 @@ function compact(t) {
   const desired = { state: { ...common, entries: { '.pstack/package': prior.state.entries['.pstack/package'], '.cursor/agents/replace.md': file('new'), '.cursor/agents/create.md': file('create'), '.cursor/skills/how': { kind: 'link', to: '../../.pstack/package/skills/how' } } }, contents: new Map([['.cursor/agents/replace.md', 'new'], ['.cursor/agents/create.md', 'create']]) };
   return { ...f, generation, prepared: { ...f.options, plan: planInstallation(installationSnapshot({ root: f.root, desired: desired.state }), desired), generation, failures: [], discoveryFailures: [], targets: ['cursor'], diagnosticOptions: { root: f.root, globalRoot: f.home, env: f.options.env } } };
 }
-test('internal fresh activation records accurate boundaries, publishes a verified receipt, and converges; public installer still copies', async t => {
+test('internal fresh activation records accurate boundaries, publishes a verified receipt, and converges; public installer uses the same transaction', async t => {
   const f = fixture(t), prepared = await prepareStagedActivation(f.options), boundaries = [];
   assert.equal(prepared.failures.length, 0);
   const result = await applyStagedActivation(prepared, { boundary: async (name, journal) => {
@@ -44,7 +44,7 @@ test('internal fresh activation records accurate boundaries, publishes a verifie
   assert.equal(observe(join(f.root, '.pstack/package')).kind, 'link'); assert.equal((await applyStagedActivation(await prepareStagedActivation(f.options))).status, 'unchanged');
   assert.ok(boundaries.includes('verifying') && boundaries.includes('committed') && boundaries.includes('cleanup'));
   const other = fixture(t), publicResult = spawnSync(process.execPath, [join(source, 'scripts/install.mjs'), '--project', other.root, '--target', 'cursor'], { env: other.options.env, encoding: 'utf8' });
-  assert.equal(publicResult.status, 0, publicResult.stderr); assert.equal(stateFrom(join(other.root, '.pstack/install.json')).version, 3); assert.equal(observe(join(other.root, '.pstack/package')).kind, 'directory');
+  assert.equal(publicResult.status, 0, publicResult.stderr); assert.equal(stateFrom(join(other.root, '.pstack/install.json')).version, 4); assert.equal(observe(join(other.root, '.pstack/package')).kind, 'link');
 });
 test('every compact mutation interruption retains exact before/after values and generation without advertising recovery execution', async t => {
   const initial = compact(t), count = initial.prepared.plan.operations.filter(op => op.action !== 'unchanged').length + 1;
