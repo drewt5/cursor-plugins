@@ -45,6 +45,8 @@ Keep scope and acceptance criteria in the child issue. The tracker summarizes ou
 
 At implementation start, recheck current code and merged prerequisites. Follow the contribution guide when evidence requires a plan change; do not silently narrow the issue to match the patch.
 
+Acquire [the task claim](task-claims.md) before editing. Use the same issue key when resuming an existing PR; do not create a second task key to bypass an active owner. Read any existing PR and handoff before treating an unclaimed issue as new work.
+
 In the PR, connect acceptance criteria to executed tests, CI evidence, and documentation changes. Reviewers check both that the behavior meets the criteria and that the tests exercise the failure being prevented. Green CI does not establish untested acceptance criteria. Record remaining limitations explicitly.
 
 Close a code-change issue only when its accepted scope has merged and its verification is accounted for. If scope is deliberately reduced, record the agreement and link the remaining work before closure. For duplicates, investigations, or declined requests, state the disposition and supporting links instead of implying a fix shipped. Close a tracker only when its overall outcome is satisfied or its remaining scope is explicitly retired.

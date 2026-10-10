@@ -24,6 +24,8 @@ gh issue view ISSUE_NUMBER --repo drewt5/cursor-plugins
 
 ## Isolate the work
 
+Before editing, follow [the task claim protocol](pstack/docs/task-claims.md). Local agents use one shared reservation per issue, across worktrees and clones. Check for an existing PR or handoff before starting; a free claim does not mean the task has no implementation. Informal human issue reports need no claim.
+
 Fetch current `origin/main` and start a dedicated branch and worktree for the assigned task. Do not assume a local `main` is current. For example, replace `123` and the description with your task:
 
 ```sh

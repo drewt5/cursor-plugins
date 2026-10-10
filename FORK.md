@@ -19,6 +19,8 @@ See [installation](pstack/docs/install.md) for individual hosts, global installa
 
 Installation copies only `pstack/` into the destination. It does not install the other plugins.
 
+Portable versions, synchronization, tag names, and upstream/source identity validation are documented in [release metadata](pstack/docs/releases.md).
+
 ## Keep the changes scoped
 
 Follow [the contribution process](CONTRIBUTING.md) when implementing a fix or feature. Task scope and dependencies remain in GitHub issues.
