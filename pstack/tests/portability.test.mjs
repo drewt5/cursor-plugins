@@ -160,6 +160,7 @@ test('updates replace an unmodified prior version and restore missing owned link
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   const old = 'previous version';
   writeFileSync(join(dir, name), old);
+  manifest.version = 2; delete manifest.provenance; delete manifest.hostObservations;
   manifest.entries[name].hash = createHash('sha256').update(old).digest('hex');
   writeFileSync(manifestPath, JSON.stringify(manifest));
   rmSync(join(dir, '.agents/skills/poteto-mode'));

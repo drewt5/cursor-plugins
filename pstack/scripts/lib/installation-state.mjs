@@ -1,3 +1,4 @@
+import { validateProvenance } from './package-provenance.mjs';
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
@@ -6,10 +7,13 @@ export const digest = value => createHash('sha256').update(value).digest('hex');
 export function present(path) {
   try { return lstatSync(path); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
+export function isPackagePath(name) {
+  return !name.split(/[\\/]/).some(part => ['node_modules', '.git', '.DS_Store', '.pstack', '.cache'].includes(part)) && !name.endsWith('.log') && name !== 'pstack-provenance.json';
+}
 export function files(directory, prefix = '') {
   return readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap(entry => {
-    if (['node_modules', '.git', '.DS_Store'].includes(entry.name) || entry.name.endsWith('.log')) return [];
     const name = join(prefix, entry.name);
+    if (!isPackagePath(name)) return [];
     if (entry.isSymbolicLink()) throw new Error(`Unexpected source symlink: ${name}`);
     return entry.isDirectory() ? files(join(directory, entry.name), name) : [name];
   });
@@ -36,7 +40,11 @@ export function stateFrom(path) {
   if (!present(path)) return { version: 2, targets: [], entries: {} };
   if (!lstatSync(path).isFile()) throw new Error(`Install manifest is not a regular file: ${path}`);
   const state = JSON.parse(readFileSync(path, 'utf8'));
-  if (![1, 2].includes(state.version) || !state.entries || Array.isArray(state.entries) || typeof state.entries !== 'object') throw new Error('Invalid pstack install manifest.');
+  if (![1, 2, 3].includes(state.version) || !state.entries || Array.isArray(state.entries) || typeof state.entries !== 'object') throw new Error('Invalid pstack install manifest.');
+  if (state.version === 3) {
+    validateProvenance(state.provenance);
+    if (!Array.isArray(state.hostObservations) || state.hostObservations.length > 3 || new Set(state.hostObservations.map(item => item?.host)).size !== state.hostObservations.length || state.hostObservations.some(item => !item || Object.keys(item).some(key => !['host', 'version', 'status'].includes(key)) || !hosts.slice(0, 3).includes(item.host) || !state.targets.includes(item.host) || !['observed', 'unavailable'].includes(item.status) || item.version !== null && (typeof item.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(item.version)))) throw new Error('Invalid installed host observations');
+  }
   if (state.version === 1) state.targets = state.target === 'all' ? hosts.slice(0, 3) : [state.target];
   if (!Array.isArray(state.targets) || state.targets.some(target => !hosts.includes(target))) throw new Error('Invalid installed targets.');
   if (Object.keys(state.entries).some(name => name.startsWith('@opencode/')) && typeof state.opencodeRoot !== 'string') throw new Error('Invalid OpenCode install root.');

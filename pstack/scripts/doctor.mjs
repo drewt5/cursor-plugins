@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -30,7 +31,7 @@ export async function runDoctor(options, { env = process.env, globalRoot = homed
   report.session = { restartRequiredAfterChanges: true, reason: 'Existing running sessions may retain old skills until restart.' };
   return { report, exitCode: diagnosticExitCode(report) };
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const options = parseDoctor(process.argv.slice(2));
     if (options.help) console.log(help);
