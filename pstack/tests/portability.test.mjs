@@ -1,4 +1,5 @@
-import test from 'node:test';
+import { withHostVersionFixtures } from './fixtures/host-versions.mjs';
+import test, { after } from 'node:test';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, existsSync, writeFileSync, rmSync, symlinkSync, statSync, renameSync } from 'node:fs';
@@ -8,6 +9,9 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const fakeRoot = mkdtempSync(join(tmpdir(), 'pstack-versions-'));
+after(() => rmSync(fakeRoot, { recursive: true, force: true }));
+const fakeEnv = withHostVersionFixtures(fakeRoot, process.env);
 const installer = join(root, 'scripts/install.mjs');
 const skills = readdirSync(join(root, 'skills')).sort();
 function fixture(t) {
@@ -16,7 +20,7 @@ function fixture(t) {
   return dir;
 }
 function install(dir, target = 'all', args = []) {
-  return spawnSync(process.execPath, [installer, '--target', target, '--project', dir, ...args], { encoding: 'utf8', env: { ...process.env, XDG_CONFIG_HOME: join(dir, 'config') } });
+  return spawnSync(process.execPath, [installer, '--target', target, '--project', dir, ...args], { encoding: 'utf8', env: { ...fakeEnv, XDG_CONFIG_HOME: join(dir, 'config') } });
 }
 function ok(result) { assert.equal(result.status, 0, result.stderr); }
 
@@ -134,7 +138,7 @@ test('shared workflows do not require Cursor tool arguments or private paths', (
 
 test('global installation uses user skill roots and the OpenCode config directory', t => {
   const dir = fixture(t);
-  const env = { ...process.env, HOME: dir, XDG_CONFIG_HOME: join(dir, 'config') };
+  const env = { ...fakeEnv, HOME: dir, XDG_CONFIG_HOME: join(dir, 'config') };
   const result = spawnSync(process.execPath, [installer, '--target', 'all', '--global'], { env, encoding: 'utf8' });
   ok(result);
   assert.ok(existsSync(join(dir, '.agents/skills/poteto-mode/SKILL.md')));
@@ -168,9 +172,9 @@ test('updates replace an unmodified prior version and restore missing owned link
 
  test('global installation supports external XDG config and targeted removal', t => {
   const home = fixture(t), config = fixture(t);
-  const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: config };
+  const env = { ...fakeEnv, HOME: home, XDG_CONFIG_HOME: config };
   const run = args => spawnSync(process.execPath, [installer, '--global', ...args], { env, encoding: 'utf8' });
-  ok(run([]));
+  ok(run(['--target', 'all']));
   assert.ok(existsSync(join(config, 'opencode/agents/poteto-agent.md')));
   assert.ok(existsSync(join(config, 'opencode/skills/poteto-mode/SKILL.md')));
   ok(run(['--target', 'opencode', '--uninstall']));

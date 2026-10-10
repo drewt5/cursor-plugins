@@ -7,6 +7,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { isolatedEnvironment } from '../scripts/lib/test-environment.mjs';
+import { withHostVersionFixtures } from './fixtures/host-versions.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 function snapshot(path, prefix = '') {
   return readdirSync(path, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap(entry => {
@@ -19,7 +20,7 @@ function snapshot(path, prefix = '') {
 function fixture(t) {
   const temporary = mkdtempSync(join(tmpdir(), 'pstack-lifecycle-'));
   t.after(() => rmSync(temporary, { recursive: true, force: true }));
-  const env = isolatedEnvironment(temporary), project = join(temporary, 'project');
+  const env = withHostVersionFixtures(temporary, isolatedEnvironment(temporary)), project = join(temporary, 'project');
   mkdirSync(project);
   const run = (command, args) => spawnSync(process.execPath, [join(root, 'scripts', command + '.mjs'), ...args], { env, encoding: 'utf8' });
   return { temporary, env, project, run };

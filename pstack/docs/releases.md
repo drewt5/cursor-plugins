@@ -1,5 +1,10 @@
 # Portable release metadata
 
+## Unreleased installer default change
+
+Fresh standalone installs no longer select all CLI hosts automatically. Without `--target`, the sole usable CLI host is selected; zero or multiple usable hosts require an explicit target before any writes. `--target all` still selects Codex, OpenCode, and Claude Code; Cursor remains explicit. Receipt-backed updates retain recorded targets, and offline uninstall uses those targets.
+
+
 `pstack/release.json` owns the portable SemVer version. Its initial `0.16.0` value preserves existing manifests; future portable versions are independent of upstream plugin versions. The plugin remains `pstack`, authored by Lauren Tan. `upstreamCommit` records the incorporated upstream commit separately. After an ancestry-preserving upstream merge and review described in [FORK.md](../../FORK.md), update that field to the incorporated commit, not a moving branch name.
 
 From the repository root, edit only the authoritative version, then synchronize its consumers:
