@@ -16,7 +16,7 @@ Updates without `--target` retain the recorded targets even if PATH changes. Exp
 
 Restart the coding host after installation. No model configuration is required.
 
-Re-running installation updates owned files and restores missing links. Targets are additive. `--dry-run` previews changes without writing. Existing conflicting skills and modified package files are preserved and reported; move or reconcile those files before retrying. The package is copied into `.pstack/package/`, so the source checkout can move without breaking an installation. Project installations can also move.
+Re-running installation updates owned files and restores missing links. Targets are additive. `--dry-run` previews changes without writing. Existing conflicting skills and modified package files are preserved and reported; move or reconcile those files before retrying. The verified package is retained under `.pstack/releases/<digest>` and activated through the relative `.pstack/package` link, so the source checkout can move without breaking an installation. One previous successful installation is retained for rollback. Project installations can also move.
 
 ## Uninstall
 
@@ -74,21 +74,34 @@ MIT. Original copyright retained.
 
 Add `--dry-run` to the same install or uninstall command to inspect a read-only JSON plan. Each operation includes its path, observed state, intended state, owning host/shared package, action (`create`, `replace`, `remove`, `unchanged`, or `conflict`), and reason. Conflicts are collected together and exit unsuccessfully without changing destination files. Apply checks that the inspected files and receipt have not changed before writing.
 
-The command entry points share `scripts/lib/installation-state.mjs` (validated receipts and destination snapshots), `installation-artifacts.mjs` (package/configuration rendering), and `installation-plan.mjs` (planning and apply). Downstream lifecycle work should consume these interfaces rather than duplicate ownership checks. This planner does not make a multi-file update transactional; recoverable activation remains separate work.
+The command entry points share `scripts/lib/installation-state.mjs` (validated receipts and destination snapshots), `installation-artifacts.mjs` (package/configuration rendering), and `installation-plan.mjs` (planning and apply). Downstream lifecycle work should consume these interfaces rather than duplicate ownership checks. Public install and uninstall use this ownership planner inside the scoped lock and recoverable activation journal. Preview does not stage packages, acquire locks, recover operations, or write to the selected scope.
 
 ## Ownership conflicts
 
 A file or symlink that exists before installation and is absent from the receipt remains user-owned even when its bytes or destination match pstack. Install reports every conflict before writing, with ownership, attempted operation, path kind, and remedy. Use a separate project installation to keep an existing same-name skill; pstack does not adopt, disable, or remove it.
 
-Recorded files must match their original content before update or removal. Missing managed artifacts are repaired. Executable modes may be restored when the recorded bytes still match: this repairs the managed file's permissions without overwriting an edit. Modified bytes or replaced symlinks require preserving/restoring the affected file before retrying. `.pstack/models.json` and unrelated files remain outside installer ownership.
+Recorded files must match their original content before update or removal. Missing managed artifacts are repaired. Generated host-artifact modes may be restored when the recorded bytes still match: this repairs the managed file's permissions without overwriting an edit. Retained package byte/executable-mode changes are refused and preserved; restore their recorded permissions/content before applying. Modified bytes or replaced symlinks require preserving/restoring the affected file before retrying. `.pstack/models.json` and unrelated files remain outside installer ownership.
 
 Legacy receipts cannot establish whether an older installer adopted an identical pre-existing file. They retain their recorded ownership; this change prevents new adoption and does not invent historical provenance.
 
-## Internal transaction locking
+## Recovery, rollback and locking
 
-`withInstallationMutation` in `scripts/lib/installation-lock.mjs` is internal until the migration/recovery cutover. It holds canonical-scope locks around the callback that reads the final snapshot, plans, applies, and publishes the receipt. A caller writing a global OpenCode root must supply that root too; its destination lock coordinates scopes sharing the same output. Independent projects remain independent. The ownership planner still rejects unowned output paths after serialization.
+From an already-selected checkout, one install command applies the release, retains recorded targets, and migrates supported legacy schemas 1/2/3 automatically when their owned bytes and directory contents are unchanged. A preview is optional. Legacy edits, unowned additions and host conflicts are listed before staging or activation. Legacy receipts retain their recorded ownership; captured original source/tag/upstream identity remains unknown when the old receipt did not record it. Initial legacy packages without a renderer can roll back unchanged adapters; changed model inputs require a compatible previous renderer or a no-write refusal with a supported next action.
 
-Contention fails promptly and identifies the owner and lock path. Inspection checks machine, platform, PID and process start identity; age alone and PID alone never authorize deletion. Dead-owner recovery also requires the exact recorded token. Missing process-inspection capability, different machines, malformed metadata, or disagreeing probes remain unverifiable and are preserved. These are local filesystem locks, not distributed leases. Callback failure and normal process exit release owned locks; abrupt death retains evidence for recovery. Public install, uninstall and dry-run do not acquire these locks yet. The later recovery command must use this same classification before the public cutover.
+```sh
+node pstack/scripts/install.mjs --project /absolute/path/to/project
+node pstack/scripts/rollback.mjs --project /absolute/path/to/project
+```
+
+Use `--global` for a user scope. Rollback restores the whole previous target/root/package installation, preserves current user model settings and providers, and uses the verified previous renderer when effective OpenCode models changed. It refuses unsupported current settings before activation. No arbitrary version history or provider downgrade is provided. See [release selection](releases.md#select-and-install-a-published-portable-release) for the complete Git clone/fetch/tag/detached-checkout sequence; the installer does not download latest releases.
+
+Public mutations hold the canonical scope lock and every recorded/intended external OpenCode-root lock. A changed XDG root in a current-format apply moves only recorded owned outputs under both locks. Legacy migration preserves its recorded OpenCode root, and uninstall always uses recorded roots. Independent projects remain independent. Contention fails promptly with the owner/path. Process identity uses the system `ps` executable independently of PATH. Machine, platform, PID and start identity must agree; age or PID alone never authorize removal. Live/unknown owners are preserved.
+
+Before activation, the installer prints and persists `.pstack/recovery.txt` with an exact command such as `node '<scope>/.pstack/releases/<digest>/scripts/recover.mjs' --project '<scope>'`. Run that exact command after interruption; it works without the original checkout or active package link. If doctor reports a demonstrably dead lock, add `--recover-dead-locks`. The public installer also accepts that flag. A pre-journal stale lock can use `node pstack/scripts/recover.mjs --project PATH --recover-dead-locks` from the selected checkout. Recovery classifies all involved owners before removing any dead token-matched lock; live/unknown owners remain protected. It never asks you to edit receipts or delete `.pstack` wholesale.
+
+A mutating apply resolves an unambiguous unfinished journal before preparing its new plan; doctor and preview remain read-only. Mandatory post-activation failure restores the previous installation using the same recovery engine. A third-party edit matching neither recorded before/after image survives with a named conflict and the exact recovery command. Committed operations finish cleanup, rather than rolling back. Only verified owned obsolete packages are deleted; active/previous/journal references and modified or unknown content remain protected. Full uninstall removes unchanged managed executable storage and reports any preserved paths. User model configuration and unrelated plugins remain.
+
+Restart/reload the host after successful installation, update or rollback. Already-running sessions can cache old instructions. The transaction handles process interruptions; it does not promise power-loss durability, live-session consistency, GUI discovery or model reasoning. [Storage details](installation-storage.md) describe the bounded retained-renderer/recovery contracts and evidence limits.
 
 ## Supported installation methods and discovery
 
@@ -160,7 +173,8 @@ Install and update now show the selected scope/targets, shared diagnostic findin
 
 After apply, the installer runs shared static and safe discovery inspection. Verified coherent origins may proceed; actual observed ambiguity/conflicting registration or mandatory discovery failure fails. Recorded overlap alone stays advisory when active discovery is unavailable, so a second receipt is not automatically treated as a proven conflict. Existing-environment native startup remains unavailable under the safety decisions above; this is not proof that every runtime extension is compatible. No model invocation or hooks are added, and doctor is optional.
 
-Until transactional activation/restoration is delivered, post-apply verification failure means files were applied and the command exits unsuccessfully with diagnostics and restart/recovery guidance. It does not mean the previous installation was preserved, and the command does not promise rollback. Preserve diagnostics, resolve the specific managed-path or host issue, and rerun doctor before restarting. A preflight failure reports no files changed.
+After activation, mandatory verification failure restores the prior installation and exits unsuccessfully with diagnostics. Conflicting external edits are preserved with the retained recovery command. A preflight failure changes no selected-scope files. Successful static checks with unavailable production native startup remain limited evidence, not proof of all runtime behavior.
+
 
 ### Installed provenance
 

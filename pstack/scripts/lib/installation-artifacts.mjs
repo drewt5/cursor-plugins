@@ -4,17 +4,17 @@ import { dirname, join, relative, sep } from 'node:path';
 import { loadModelConfig, inherits } from '../../skills/pstack-runtime/scripts/models.mjs';
 import { digest, files, pathFor as resolvePath } from './installation-state.mjs';
 
-export function renderArtifacts({ source, root, targets, opencodeRoot, global = false, config, hostObservations = [] }) {
+export function renderArtifacts({ source, root, targets, opencodeRoot, global = false, config, hostObservations = [], provenance, includePackage = true }) {
   const options = { global };
   const pathFor = (name, state) => resolvePath(root, name, state, false);
-  const plannedState = { version: 3, targets, opencodeRoot, entries: {}, ...(targets.length ? { provenance: readSourceProvenance(source), hostObservations } : {}) };
+  const plannedState = { version: 3, targets, opencodeRoot, entries: {}, ...(targets.length ? { provenance: provenance ?? readSourceProvenance(source), hostObservations } : {}) };
   const planned = plannedState.entries;
   const contents = new Map();
   const addFile = (name, data, mode = 0o644) => { name = name.split(sep).join('/'); planned[name] = { kind: 'file', hash: digest(data), mode }; contents.set(name, data); };
   const addLink = (name, destination) => { name = name.split(sep).join('/'); planned[name] = { kind: 'link', to: relative(dirname(pathFor(name, plannedState)), join(root, destination)) }; };
   if (targets.length) {
-    for (const name of files(source)) addFile(join('.pstack/package', name), readFileSync(join(source, name)), lstatSync(join(source, name)).mode & 0o777);
-    addFile('.pstack/package/pstack-provenance.json', JSON.stringify(plannedState.provenance, null, 2) + '\n');
+    if (includePackage) for (const name of files(source)) addFile(join('.pstack/package', name), readFileSync(join(source, name)), lstatSync(join(source, name)).mode & 0o777);
+    if (includePackage) addFile('.pstack/package/pstack-provenance.json', JSON.stringify(plannedState.provenance, null, 2) + '\n');
     for (const target of targets) {
       const skillDir = target === 'claude-code' ? '.claude/skills' : target === 'cursor' ? '.cursor/skills' : target === 'opencode' ? '@opencode/skills' : '.agents/skills';
       for (const name of readdirSync(join(source, 'skills')).sort()) addLink(join(skillDir, name), join('.pstack/package/skills', name));

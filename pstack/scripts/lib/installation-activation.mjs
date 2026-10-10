@@ -23,11 +23,13 @@ export async function prepareStagedActivation(options) {
   const root = canonicalPath(options.root), generation = generationDescriptor(stagePackage({ source: options.source, root }));
   const packageRoot = verifyGeneration(root, generation);
   const { loadModelConfig } = await import(pathToFileURL(join(packageRoot, 'skills/pstack-runtime/scripts/models.mjs')).href);
-  const config = options.config ?? loadModelConfig({ project: root, home: options.globalRoot, configHome: options.env?.XDG_CONFIG_HOME, host: 'opencode' });
+  let config = options.config;
+  const modelConfig = () => config ??= loadModelConfig({ project: root, home: options.globalRoot, configHome: options.env?.XDG_CONFIG_HOME, host: 'opencode' });
   const fingerprint = targets => renderingFingerprint(config, targets);
   const prepared = await prepareInstallation({ ...options, root, render: async args => {
+    if (args.targets.includes('opencode')) modelConfig(); else config ??= { roles: {} };
     const artifacts = await renderStagedArtifacts({ ...args, root, generation, config });
-    artifacts.state.version = 4; artifacts.state.generation = generation; artifacts.state.renderingFingerprint = fingerprint(artifacts.state.targets);
+    if (artifacts.state.targets.length) { artifacts.state.version = 4; artifacts.state.generation = generation; artifacts.state.renderingFingerprint = fingerprint(artifacts.state.targets); } else artifacts.state = { version: 2, targets: [], entries: {} };
     parseInstallationState(JSON.stringify(artifacts.state));
     return artifacts;
   } });
@@ -36,9 +38,10 @@ export async function prepareStagedActivation(options) {
     legacy = captureLegacyPackage(root, prepared.plan.snapshot.previous);
     const snapshot = installationSnapshot({ root, desired: prepared.plan.artifacts.state, includeEntry: name => !name.startsWith('.pstack/package/') });
     const plan = planInstallation(snapshot, prepared.plan.artifacts);
-    const stable = plan.operations.find(op => op.name === '.pstack/package');
+    let stable = plan.operations.find(op => op.name === '.pstack/package');
+    if (!stable) { stable = { name: '.pstack/package', path: safePath(root, '.pstack/package'), before: observe(safePath(root, '.pstack/package')), intended: { kind: 'absent' }, action: 'remove', ownership: 'managed', owner: 'shared-package' }; plan.operations.push(stable); }
     assert.equal(stable.before.kind, 'directory');
-    Object.assign(stable, { action: 'replace', ownership: 'managed', code: null, reason: 'Verified legacy directory transition' });
+    Object.assign(stable, { action: stable.intended.kind === 'absent' ? 'remove' : 'replace', ownership: 'managed', code: null, reason: 'Verified legacy directory transition' });
     plan.conflicts = plan.operations.filter(op => op.action === 'conflict'); prepared.plan = plan;
   }
   return { ...prepared, generation, config, legacy };
@@ -78,7 +81,7 @@ export function buildActivationJournal(prepared) {
   operations.sort((a, b) => (a.name === '.pstack/package' ? -1 : b.name === '.pstack/package' ? 1 : a.name.localeCompare(b.name)));
   if (prepared.legacy) operations.unshift({ kind: 'legacy-directory', name: '.pstack/package', path: safePath(root, '.pstack/package'), backupName: `.pstack/legacy-${id}`, treeDigest: prepared.legacy.treeDigest, treeRows: prepared.legacy.treeRows, before: observe(safePath(root, '.pstack/package')), after: { kind: 'absent' } });
   const changed = operations.length || plan.snapshot.previous.generation?.digest !== prepared.generation.digest || plan.snapshot.previous.renderingFingerprint !== plan.artifacts.state.renderingFingerprint;
-  const previous = changed ? capturePrevious(root, plan.snapshot.previous, prepared.legacy) : plan.snapshot.previous.previous;
+  const previous = plan.artifacts.state.targets.length ? changed ? capturePrevious(root, plan.snapshot.previous, prepared.legacy) : plan.snapshot.previous.previous : null;
   if (previous && !prepared.noHistory) plan.artifacts.state.previous = previous;
   const receipt = JSON.stringify(plan.artifacts.state, null, 2) + '\n';
   const before = image(plan.snapshot.statePath, plan.snapshot.receipt);
@@ -128,7 +131,7 @@ export async function applyStagedActivation(prepared, options) {
 
 export async function runStagedInstallation(options, controls = {}) {
   const root = canonicalPath(options.root), unfinished = readActivationJournal(root);
-  const configured = options.options?.global ? resolve(options.env?.XDG_CONFIG_HOME || join(root, '.config'), 'opencode') : join(root, '.opencode');
+  const configured = options.opencodeRootOverride ? resolve(root, options.opencodeRootOverride) : options.options?.global ? resolve(options.env?.XDG_CONFIG_HOME || join(root, '.config'), 'opencode') : join(root, '.opencode');
   const previous = unfinished?.priorReceipt ?? stateFrom(safePath(root, '.pstack/install.json'));
   const recorded = Object.keys(previous.entries).some(name => name.startsWith('@opencode/')) ? [resolve(root, previous.opencodeRoot)] : [];
   const needsConfigured = ['opencode', 'all'].includes(options.options?.target) || previous.targets.includes('opencode') || options.options?.target === undefined && !previous.targets.length;

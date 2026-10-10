@@ -1,8 +1,9 @@
 import { cleanupReleases } from './release-cleanup.mjs';
 import assert from 'node:assert/strict';
 import { rmdirSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { canonicalPath, observe, present, safePath } from './installation-state.mjs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { canonicalPath, observe, present, safePath, stateFrom } from './installation-state.mjs';
 import { readActivationJournal, matchesObserved, legacyMoveStatus, applyLegacyMove, applyJournalImage, persistJournal, recoveryCommand, cleanupJournalMetadata, cleanOperationTemporaries, finishJournalCleanup } from './activation-journal.mjs';
 import { inspectInstallationLock, recoverInstallationLock, withInstallationMutation } from './installation-lock.mjs';
 export function journalMutationRoots(root, journal) {
@@ -45,12 +46,15 @@ export async function recoverUnderLock(root, { boundary = async () => {} } = {})
   return { status: 'restored-prior', restored: true, operation: journal.id };
 }
 export const recoveryContract = 2;
-export async function recoverInstallation(root, { recoverDeadLocks = false, boundary, executablePackage } = {}) {
+export async function recoverInstallation(root, { recoverDeadLocks = false, boundary, executablePackage, env = process.env } = {}) {
   root = canonicalPath(root); const journal = readActivationJournal(root);
   if (executablePackage && journal) assert.equal(canonicalPath(executablePackage), canonicalPath(resolve(root, (journal.recoveryGeneration ?? journal.generation).name)), 'Use the exact retained recovery command from doctor/journal');
-  const roots = journal ? journalMutationRoots(root, journal) : [];
+  const previous = journal ? null : stateFrom(safePath(root, '.pstack/install.json'));
+  const candidates = journal ? journalMutationRoots(root, journal) : [join(root, '.opencode'), ...(Object.keys(previous.entries).some(name => name.startsWith('@opencode/')) ? [resolve(root, previous.opencodeRoot)] : []), ...(root === canonicalPath(env.HOME || homedir()) ? [resolve(env.XDG_CONFIG_HOME || join(root, '.config'), 'opencode')] : [])];
+  const roots = journal ? candidates : [...new Set(candidates)].filter(path => present(safePath(canonicalPath(path), '.pstack-mutation.lock')));
 
   const recoveredLocks = recoverDeadLocks ? recoverDemonstrablyDeadLocks(root, roots) : [];
+  if (!journal) return { status: 'no-operation', restored: false, recoveredLocks };
   try {
     const result = await withInstallationMutation({ root, opencodeRoots: roots }, () => recoverUnderLock(root, { boundary }));
     if (result.operation) { try { await withInstallationMutation({ root }, () => { finishJournalCleanup(root, result.operation); if (result.status === 'committed-cleanup') result.cleanup = cleanupReleases(root); }); } catch (error) { result.cleanupPending = true; result.cleanupError = error.message; } }

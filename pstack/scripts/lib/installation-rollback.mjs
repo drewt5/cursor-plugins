@@ -19,7 +19,7 @@ export async function prepareRollback({ root, globalRoot, global = false, env = 
   validatePrevious(current.previous); const previous = current.previous;
   const integrityFailures = []; let packageRoot;
   for (const generation of [previous.state.generation, current.generation]) try { const path = verifyGeneration(root, generation); if (generation === previous.state.generation) packageRoot = path; } catch (error) { integrityFailures.push({ code: 'GENERATION_INVALID', severity: 'error', subject: generation.name, evidence: { error: error.message }, action: 'Preserve the modified package and restore its verified bytes before rollback.' }); }
-  const config = loadModelConfig({ project: root, home: globalRoot, configHome: env.XDG_CONFIG_HOME, host: 'opencode' });
+  const config = previous.state.targets.includes('opencode') ? loadModelConfig({ project: root, home: globalRoot, configHome: env.XDG_CONFIG_HOME, host: 'opencode' }) : { roles: {} };
   const fingerprint = renderingFingerprint(config, previous.state.targets);
   let artifacts = { state: structuredClone(previous.state), contents: new Map(Object.entries(previous.contents).map(([name, data]) => [name, Buffer.from(data, 'base64')])) };
   if (fingerprint !== previous.state.renderingFingerprint && !integrityFailures.length) {

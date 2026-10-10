@@ -24,7 +24,7 @@ export function capturePrevious(root, state, legacy) {
   const retained = structuredClone(state); delete retained.previous;
   if (retained.version < 4) {
     assert.ok(legacy, 'Legacy baseline was not verified');
-    retained.version = 4; retained.generation = legacy.generation; retained.provenance = legacy.generation.provenance; retained.hostObservations ??= [];
+    retained.version = 4; retained.generation = legacy.generation; retained.provenance = legacy.generation.provenance; retained.hostObservations = state.version < 3 ? [] : retained.hostObservations;
     for (const name of Object.keys(retained.entries)) if (name.startsWith('.pstack/package/')) delete retained.entries[name];
     retained.entries['.pstack/package'] = { kind: 'link', to: `releases/${legacy.generation.digest}` };
     const map = retained.entries['.pstack/opencode-models.json'];

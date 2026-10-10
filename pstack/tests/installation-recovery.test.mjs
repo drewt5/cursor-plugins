@@ -1,3 +1,4 @@
+import { installLegacy } from './fixtures/legacy-installation.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cpSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
@@ -90,9 +91,9 @@ test('printed retained command recovers a killed fresh install with the original
 test('legacy schemas recover the exact real directory/receipt through a candidate executable after source deletion', { timeout: 30000 }, async t => {
   for (const [schema, target] of [[1, 'mutation:1'], [2, 'mutation:0'], [2, 'mutation:1']]) {
     const f = fixture(t, true), legacySource = join(f.base, 'legacy-source'); cpSync(f.selectedSource, legacySource, { recursive: true }); rmSync(join(legacySource, 'scripts/recover.mjs'));
-    const installed = spawnSync(process.execPath, [join(legacySource, 'scripts/install.mjs'), '--target', 'cursor', '--project', f.root], { env: f.env, encoding: 'utf8' }); assert.equal(installed.status, 0, installed.stderr);
+    installLegacy({ source: legacySource, root: f.root });
     const state = JSON.parse(readFileSync(join(f.root, '.pstack/install.json')));
-    for (const name of ['release.json', 'pstack-provenance.json']) { rmSync(join(f.root, '.pstack/package', name)); delete state.entries['.pstack/package/' + name]; }
+    for (const name of ['release.json', 'pstack-provenance.json']) { rmSync(join(f.root, '.pstack/package', name), { force: true }); delete state.entries['.pstack/package/' + name]; }
     state.version = schema; delete state.provenance; delete state.hostObservations; if (schema === 1) { state.target = 'cursor'; delete state.targets; }
     writeFileSync(join(f.root, '.pstack/install.json'), JSON.stringify(state, null, 2) + '\n');
     const before = activeSnapshot(f.root), p = await prepareStagedActivation(f.options), retained = verifyGeneration(f.root, p.generation);
@@ -161,7 +162,7 @@ test('restoration itself survives an IPC kill after a before-image temporary wri
 });
 test('successful internal legacy activation cleans its certified directory backup only after committing', async t => {
   const f = fixture(t);
-  const result = spawnSync(process.execPath, [join(source, 'scripts/install.mjs'), '--target', 'cursor', '--project', f.root], { env: f.env, encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr);
+  installLegacy({ source, root: f.root });
   const prepared = await prepareStagedActivation(f.options); assert.ok(prepared.legacy);
   let backup;
   assert.equal((await applyStagedActivation(prepared, { boundary: (name, journal) => {
