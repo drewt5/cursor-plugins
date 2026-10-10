@@ -136,3 +136,16 @@ test('advisory reports retain exact resolution and default-branch source identit
   assert.deepEqual(report.host.resolution, resolution);
   assert.equal(f.run(['finalize', 'setup'], { ...env, PSTACK_HOST_RESOLUTION: JSON.stringify({ ...row, version: '99.0.0', resolution }) }).status, 1);
 });
+
+test('resolution phase evidence cannot overwrite the registry outcomes artifact', t => {
+  const f = fixture(t);
+  const resolver = new URL('../scripts/resolve-providers.mjs', import.meta.url).href;
+  const code = `globalThis.fetch = async url => ({ ok: true, json: async () => ({ name: decodeURIComponent(new URL(url).pathname.slice(1, -7)), version: '1.2.3', engines: { node: '>=20' } }) }); await import(${JSON.stringify(resolver)});`;
+  const result = f.run(['run', 'resolution', '--', process.execPath, '--input-type=module', '-e', code]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(f.run(['finalize', 'resolution']).status, 0);
+  assert.equal(f.read('provider-resolution.json').results.length, 3);
+  assert.equal(f.read('provider-resolution.json').status, 'resolved');
+  assert.equal(f.read('resolution.json').phase, 'resolution');
+  assert.equal(f.read('report.json').phases[0].status, 'passed');
+});
