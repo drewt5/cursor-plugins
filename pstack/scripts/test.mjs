@@ -43,6 +43,7 @@ try {
   for (let pass = 1; pass <= repeat; pass++) {
     console.log(`\nPstack ${mode} suite ${pass}/${repeat}`);
     if (mode !== 'helpers') {
+      run(process.execPath, [join(root, 'scripts/release.mjs'), '--check']);
       run(process.execPath, ['--test', ...readdirSync(join(root, 'tests')).filter(name => name.endsWith('.test.mjs')).sort().map(name => join(root, 'tests', name))]);
       run('bash', ['-n', join(root, 'skills/poteto-mode/scripts/worktree-audit.sh')]);
     }
