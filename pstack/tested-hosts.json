@@ -9,7 +9,10 @@
       "node": 22,
       "capabilities": [
         "project-skill-discovery",
-        "standalone-mock-invocation"
+        "standalone-mock-invocation",
+        "global-skill-discovery",
+        "scope-origin-inspection",
+        "qualified-skill-identities"
       ]
     },
     {
@@ -21,7 +24,9 @@
       "capabilities": [
         "project-skill-discovery",
         "native-agent-discovery",
-        "standalone-mock-invocation"
+        "standalone-mock-invocation",
+        "global-skill-discovery",
+        "scope-origin-inspection"
       ]
     },
     {
@@ -33,7 +38,9 @@
       "capabilities": [
         "native-plugin-inventory",
         "standalone-mock-invocation",
-        "native-plugin-mock-invocation"
+        "native-plugin-mock-invocation",
+        "global-standalone-mock-invocation",
+        "native-qualified-same-name-mock-invocation"
       ]
     }
   ]

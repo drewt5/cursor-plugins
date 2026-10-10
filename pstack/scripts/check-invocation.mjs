@@ -54,7 +54,7 @@ const server = createServer(async (request, response) => {
     response.end();
   } catch (error) { response.writeHead(500); response.end(JSON.stringify({ error: error.message })); }
 });
-async function run(executable, args, extraEnv = {}) {
+async function run(executable, args, extraEnv = {}, expectedBody = ['## Non-negotiables', 'pstack-runtime']) {
   requests = [];
   const child = spawn(executable, args, { cwd: project, env: { ...env, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
   let output = '', errors = '';
@@ -78,15 +78,15 @@ async function run(executable, args, extraEnv = {}) {
   assert.ok(!timedOut, `${executable} invocation timed out: ${errors.slice(-4000)}\n${output.slice(-4000)}`);
   assert.equal(code, 0, `${executable}: ${errors}\n${output.slice(-2000)}`);
   assert.ok(requests.length > 0, `${executable} never reached the local test API: ${output} ${errors}`);
-  assert.ok(requests.some(body => JSON.stringify(body).includes('## Non-negotiables') && JSON.stringify(body).includes('pstack-runtime')), `${executable} did not expand poteto-mode into the model request`);
+  assert.ok(requests.some(body => expectedBody.every(marker => JSON.stringify(body).includes(marker))), `${executable} (${args.at(-1)}) did not expand the expected skill content into the model request`);
   assert.ok(output.includes(marker), `${executable} did not return the fixture response`);
 }
 try {
   const selected = process.argv[2] || 'all';
   assert.ok(['all', 'codex', 'opencode', 'claude-code'].includes(selected), 'Expected all, codex, opencode, or claude-code');
   for (const row of loadHosts().filter(row => selected === 'all' || row.host === selected)) observeHost(row.host, { ...env, PSTACK_HOST_VERSION: process.env.PSTACK_HOST_VERSION || '' });
-  const install = (target, uninstall = false) => {
-    const result = spawnSync(process.execPath, [join(source, 'scripts/install.mjs'), '--target', target, '--project', project, ...(uninstall ? ['--uninstall'] : [])], { env, encoding: 'utf8', timeout: 30000 });
+  const install = (target, uninstall = false, scope = 'project') => {
+    const result = spawnSync(process.execPath, [join(source, 'scripts/install.mjs'), '--target', target, ...(scope === 'global' ? ['--global'] : ['--project', project]), ...(uninstall ? ['--uninstall'] : [])], { env, encoding: 'utf8', timeout: 30000 });
     assert.equal(result.status, 0, result.stderr);
   };
   assert.equal(spawnSync('git', ['init', '-q', project], { env, timeout: 15000 }).status, 0);
@@ -97,8 +97,15 @@ try {
     const common = [ '--setting-sources', 'project', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence', '--permission-mode', 'dontAsk', '--tools', '', '-p', '--output-format', 'json'];
     await run('claude', [...common, '/poteto-mode Read-only installation smoke test.'], { ANTHROPIC_BASE_URL: base });
     install('claude-code', true);
+    env.CLAUDE_CONFIG_DIR = join(env.HOME, '.claude'); mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true });
+    install('claude-code', false, 'global');
+    await run('claude', [common[0], 'user,project', ...common.slice(2), '/poteto-mode Read-only global installation smoke test.'], { ANTHROPIC_BASE_URL: base });
+    install('claude-code', true, 'global');
+    const independent = join(project, '.claude/skills/independent-poteto'); mkdirSync(independent, { recursive: true });
+    writeFileSync(join(independent, 'SKILL.md'), '---\nname: poteto-mode\ndescription: Independent same-name fixture\n---\n\nPSTACK_INDEPENDENT_SAME_NAME\n');
     await run('claude', ['--plugin-dir', source, ...common, '/pstack:poteto-mode Read-only installation smoke test.'], { ANTHROPIC_BASE_URL: base });
-    console.log('Claude Code: standalone and native-plugin commands expand the actual skill and complete a local API round trip.');
+    await run('claude', ['--plugin-dir', source, ...common, '/poteto-mode Read-only independent skill smoke test.'], { ANTHROPIC_BASE_URL: base }, ['PSTACK_INDEPENDENT_SAME_NAME']);
+    console.log('Claude Code: project/global standalone and qualified native-plugin commands expand the actual skill; independent same-name bare command expands its own content. Local API round trips only.');
   }
   if (selected === 'all' || selected === 'opencode') {
     install('opencode');

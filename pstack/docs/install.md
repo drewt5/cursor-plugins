@@ -85,3 +85,37 @@ Legacy receipts cannot establish whether an older installer adopted an identical
 `withInstallationMutation` in `scripts/lib/installation-lock.mjs` is internal until the migration/recovery cutover. It holds canonical-scope locks around the callback that reads the final snapshot, plans, applies, and publishes the receipt. A caller writing a global OpenCode root must supply that root too; its destination lock coordinates scopes sharing the same output. Independent projects remain independent. The ownership planner still rejects unowned output paths after serialization.
 
 Contention fails promptly and identifies the owner and lock path. Inspection checks machine, platform, PID and process start identity; age alone and PID alone never authorize deletion. Dead-owner recovery also requires the exact recorded token. Missing process-inspection capability, different machines, malformed metadata, or disagreeing probes remain unverifiable and are preserved. These are local filesystem locks, not distributed leases. Callback failure and normal process exit release owned locks; abrupt death retains evidence for recovery. Public install, uninstall and dry-run do not acquire these locks yet. The later recovery command must use this same classification before the public cutover.
+
+## Supported installation methods and discovery
+
+Wrapper-managed standalone installation is the default lifecycle method for Codex, OpenCode, Claude Code, and explicitly selected Cursor. Claude's native plugin is an externally managed alternative: use `claude --plugin-dir /absolute/path/to/pstack`, then `/pstack:poteto-mode`. The wrapper does not update or uninstall that external plugin. Choose one pstack method per scope; do not combine native-plugin pstack and standalone pstack and assume precedence.
+
+The following contract is sampled by `scripts/check-hosts.mjs HOST` at the exact versions in [tested-hosts.json](../tested-hosts.json). Its scope fixtures in [scope-contracts.mjs](../scripts/lib/scope-contracts.mjs) run in temporary homes/projects and produce `installation-contract-HOST.json` inside the corresponding native CI artifact. [check-invocation.mjs](../scripts/check-invocation.mjs) separately proves entry-skill expansion through a local mock API; it is not a standalone catalog or model reasoning test.
+
+| Host/method | Project / global roots | Invocation and agent identity | Discovery/origin evidence | Supported scope combination |
+| --- | --- | --- | --- | --- |
+| Codex standalone | `.agents/skills` / `~/.agents/skills` | `$pstack:poteto-mode`; bundled agent prompts are supplied to available generic workers | `codex app-server` `skills/list` returns all skill origins and qualified names | Project-only and global-only identify a complete bundle. Both scopes expose duplicate bundles and are ambiguous. |
+| OpenCode standalone | `.opencode/skills`, `commands`, `agents` / `$XDG_CONFIG_HOME/opencode` (default `~/.config/opencode`) | `/poteto-mode`; `poteto-agent`, `comment-sicko`, generated model agents | `opencode --pure debug skill` returns origins; `debug agent NAME` returns native registration | Project-only and global-only identify a complete bundle. Both scopes expose ambiguous sources. |
+| Claude standalone | `.claude/skills`, `agents` / `~/.claude/skills`, `agents` | `/poteto-mode`; `poteto-agent`, `comment-sicko` | Project/global mock expansion is verified; no standalone catalog/origin interface is exposed by the sampled CLI | One pstack scope at a time. Full standalone bundle precedence is unknown; both scopes are unsupported. Global smoke includes `user,project` setting sources. |
+| Claude external native plugin | The selected package via `--plugin-dir`; provider-managed marketplace installation is outside wrapper ownership | `/pstack:poteto-mode`; plugin-qualified agents | `claude --plugin-dir PATH plugin details pstack` inventories plugin skills/agents; qualified mock expansion is verified | Use instead of standalone pstack. A separate independent bare `/poteto-mode` skill can coexist with the qualified plugin entry. |
+| Cursor standalone | `.cursor/skills`, `agents` / `~/.cursor/skills`, `agents` | Existing slash/agent names are preserved | Installer, files and manifests only; no supported automated GUI origin probe is used | One scope is the static contract. Cross-scope and same-name GUI resolution remain unverified. |
+
+Restart/reload the host after installing or changing a bundle; an existing session can cache old instructions. A host version or inventory alone does not prove every skill's semantics. Custom Claude configuration roots are not migrated by the wrapper: the sampled standalone global root is `~/.claude`; if `CLAUDE_CONFIG_DIR` points elsewhere, use a project installation or the externally managed native plugin rather than claiming global discovery. OpenCode's global XDG root is recorded in the receipt and respected during removal.
+
+For an ambiguous global/project combination, keep one complete pstack bundle. For example, from the selected release checkout, remove only the unwanted global host and retain its project installation:
+
+```sh
+node pstack/scripts/uninstall.mjs --global --target codex
+node pstack/scripts/install.mjs --project /path/to/project --target codex
+```
+
+Replace `codex` with the affected host. The wrapper preserves user model configuration and other targets. Do not disable another skill/plugin to make pstack win. The scope evidence defines what later diagnostics/preflight must permit or reject; the public preflight integration is a separate roadmap task, so existing CLI success alone does not establish a supported topology.
+
+For an independent same-name skill, the fixture establishes these concrete paths:
+
+- Codex keeps `$pstack:poteto-mode` separate from the independent bare `$poteto-mode` identity in the same project catalog. Use the qualified pstack name shown by the host.
+- OpenCode project pstack shadows an independent global bare `poteto-mode` skill in that project. The independent skill remains discoverable in another project without project pstack. Keep pstack project-scoped and use that independent project; same-project bare-name coexistence is an explicit unsupported scope. The smallest future adapter would add a qualified pstack channel; no alias or namespace rewrite ships in this investigation.
+- Claude can load externally managed native pstack through `--plugin-dir` and expand `/pstack:poteto-mode` while a project-authored `/poteto-mode` expands its own content. This alternative is tested independently of standalone discovery.
+- Cursor can preserve the independent skill in another project, but GUI invocation remains unverified. The explicit product limit is static installation/preservation, not certified same-name GUI coexistence. The final lifecycle review must retain this limitation or supply real GUI evidence.
+
+These bounded scope decisions avoid automatic prefixes/aliases or arbitrary per-skill removal. Core skills, helpers, agents, playbooks and references remain one coherent package. Configuration and user-authored skills stay separate. Existing generated commands and agent/runtime guidance reference `.pstack/package`; future storage migration must preserve that stable resolution path, including project relocation. This investigation does not migrate native plugins or redesign public invocation identities.
