@@ -2,6 +2,8 @@
 
 Follow [the contribution process](CONTRIBUTING.md) for task intake, isolated work, plan changes, verification, and handoff. It applies beyond the current roadmap.
 
+Before editing, acquire the task's shared claim using [the local agent claim protocol](pstack/docs/task-claims.md). A busy or unverifiable claim means do not start duplicate work. Recheck ownership after a pause or handoff.
+
 Read [the manifesto](MANIFESTO.md) before nontrivial design or plan work. Treat it as durable priorities, not a claim that planned features have shipped.
 
 Keep portability changes inside `pstack/` and its CI and fork documentation. Preserve other plugins.
