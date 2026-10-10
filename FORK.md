@@ -2,7 +2,7 @@
 
 This fork extends the `pstack/` plugin in [cursor/plugins](https://github.com/cursor/plugins) to Codex, OpenCode, and Claude Code. Cursor support remains available. Other plugins keep their upstream contents and are not claimed to support these additional hosts.
 
-The `portability` branch starts from upstream commit `d73344bee8cf22e53b9d5f4cf5749d38ba38c174`. It keeps upstream's history and directory layout. Portability changes are ordinary commits on that branch. Git records the merge base; there is no separate snapshot importer or upstream lock file.
+The fork's default branch, `main`, starts from upstream commit `d73344bee8cf22e53b9d5f4cf5749d38ba38c174`. It keeps upstream's history and directory layout. Portability changes are ordinary commits on `main`. The `upstream/main` remote-tracking branch tracks Cursor's version. Git records the merge base; there is no separate snapshot importer or upstream lock file.
 
 ## Install and verify
 
@@ -32,13 +32,13 @@ Keep repository-wide changes limited to the fork documentation, pstack's marketp
 
 ## Merge an upstream update
 
-Use `upstream` for `https://github.com/cursor/plugins.git` and `origin` for the published fork. A GitHub fork relationship is separate from local Git ancestry. Until the fork is published, do not push this branch to an unrelated standalone repository.
+Use `upstream` for `https://github.com/cursor/plugins.git` and `origin` for `https://github.com/drewt5/cursor-plugins.git`. After cloning the fork, add the upstream remote with `git remote add upstream https://github.com/cursor/plugins.git`.
 
 Start with a clean worktree, then create a review branch:
 
 ```sh
 git fetch upstream
-git switch portability
+git switch main
 git switch -c sync/upstream-YYYY-MM-DD
 git log --oneline HEAD..upstream/main -- pstack
 git merge upstream/main
@@ -54,7 +54,7 @@ node pstack/scripts/test.mjs --portable
 
 Run `npm --prefix pstack test` when installation, host metadata, model configuration, or invocation behavior changes, and before a release. Exercise changed workflows on a supported host when prompt behavior changes. Mock API checks verify loading and invocation, not model reasoning.
 
-Open a PR against the fork's `portability` branch. Include upstream commits affecting pstack, adaptations, unresolved capability gaps, and test results. Merge the PR with a merge commit so upstream ancestry is retained. Do not squash or rebase upstream-sync PRs. A reverted update needs an explicit follow-up because reverting files does not remove the recorded upstream merge.
+Open a PR against the fork's `main` branch. Include upstream commits affecting pstack, adaptations, unresolved capability gaps, and test results. Merge the PR with a merge commit so upstream ancestry is retained. Do not squash or rebase upstream-sync PRs. A reverted update needs an explicit follow-up because reverting files does not remove the recorded upstream merge.
 
 ## Attribution
 
