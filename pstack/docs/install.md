@@ -58,7 +58,7 @@ The full suite requires Node.js 20+, Git, Bash, Bun, Codex, OpenCode, and Claude
 
 Each run uses fresh temporary directories and removes them afterward. Host settings, caches, credentials, and test dependency installs are isolated. No paid model calls or personal configuration changes are needed. The first dependency install needs registry access; later runs may use the package manager's available cache. Sandboxed environments must allow CLI subprocesses and a loopback listener. Tests fail rather than silently skipping host checks.
 
-The mock API verifies integration, not model reasoning quality. External services, cloud execution, independent model comparisons, and unattended wakeups still require the relevant configured capabilities. Windows junction support is implemented but native CLI tests were verified on macOS. Portable unit and helper tests run on macOS/Linux in CI.
+The mock API verifies integration, not model reasoning quality. External services, cloud execution, independent model comparisons, and unattended wakeups still require the relevant configured capabilities. Windows junction support is implemented but native CLI tests were verified on macOS. PR CI runs unit checks on Linux and macOS, helper checks on Linux, and native CLI smoke tests on Linux. See [PR verification](ci.md) for tested versions, coverage limits, and failure diagnosis.
 
 ## Layout
 
