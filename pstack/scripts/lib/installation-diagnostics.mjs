@@ -1,3 +1,4 @@
+import { verifyGeneration } from './installation-storage.mjs';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { isolatedEnvironment } from './test-environment.mjs';
@@ -27,7 +28,7 @@ export function probeHostVersion(row, env = process.env, timeout = 3000) {
   return { code: version === row.version ? null : 'HOST_VERSION_UNKNOWN', status: version === row.version ? 'observed-baseline' : 'unavailable-compatibility', evidence: { ...evidence, actualVersion: version } };
 }
 function managedName(name) {
-  return /^\.pstack\/package\//.test(name) || name === '.pstack/opencode-models.json'
+  return name === '.pstack/package' || /^\.pstack\/package\//.test(name) || name === '.pstack/opencode-models.json'
     || /^\.agents\/skills\//.test(name) || /^\.(claude|cursor)\/(skills|agents)\//.test(name) || /^\.opencode\/(skills|agents|commands)\//.test(name)
     || /^@opencode\/(skills|agents|commands)\//.test(name);
 }
@@ -44,7 +45,7 @@ export function inspectInstallation({ root, global = false, targets, env = proce
     if (Object.keys(previous.entries).some(name => !managedName(name))) throw new Error('Receipt contains paths outside managed package/host locations');
     result.receipt = { path, status: present(path) ? 'valid' : 'absent', schemaVersion: present(path) ? previous.version : null };
     result.targets = previous.targets;
-    result.installedHostObservations = previous.version === 3 ? previous.hostObservations : [];
+    result.installedHostObservations = previous.version >= 3 ? previous.hostObservations : [];
     if (result.receipt.status === 'valid') {
       const selected = targets ?? previous.targets;
       const snapshot = snapshotReader({ root: result.scope.root, desired: previous, includeEntry: name => entryOwner(name) === 'shared-package' || selected.includes(entryOwner(name)) });
@@ -66,12 +67,16 @@ export function inspectInstallation({ root, global = false, targets, env = proce
         }
       }
       if (findings.some(item => item.severity === 'error')) result.integrity.status = 'failed';
-      if (previous.version === 3) {
+      if (previous.version >= 3) {
         const payload = snapshot.owned.filter(item => item.name.startsWith('.pstack/package/') && isPackagePath(item.name.slice('.pstack/package/'.length))).map(item => {
           const actual = snapshot.observed[item.path];
           return { path: item.name.slice('.pstack/package/'.length), kind: actual.kind, executableMode: actual.mode & 0o111, hash: actual.hash };
         }).sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
-        const observedPackageDigest = payload.every(item => item.kind === 'file') ? digest(JSON.stringify(payload)) : null;
+        let observedPackageDigest = payload.every(item => item.kind === 'file') ? digest(JSON.stringify(payload)) : null;
+        if (previous.version === 4) {
+          try { verifyGeneration(result.scope.root, previous.generation); observedPackageDigest = previous.generation.digest; }
+          catch (error) { observedPackageDigest = null; finding('GENERATION_INVALID', 'error', previous.generation.name, { error: error.message }, 'Preserve the retained package and resolve its recorded integrity conflict before mutation.'); }
+        }
         const matches = observedPackageDigest === previous.provenance.packageDigest;
         result.provenance = { ...previous.provenance, status: matches ? 'matches-recorded-payload' : 'modified', classification: matches ? previous.provenance.classification : 'modified', recordedClassification: previous.provenance.classification, observedPackageDigest };
         if (!matches) result.integrity.status = 'failed';

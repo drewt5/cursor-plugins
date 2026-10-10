@@ -1,3 +1,4 @@
+import { validateGeneration } from './generation-contract.mjs';
 import { validateProvenance } from './package-provenance.mjs';
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync } from 'node:fs';
@@ -39,11 +40,18 @@ export function safePath(root, name) {
 export function stateFrom(path) {
   if (!present(path)) return { version: 2, targets: [], entries: {} };
   if (!lstatSync(path).isFile()) throw new Error(`Install manifest is not a regular file: ${path}`);
-  const state = JSON.parse(readFileSync(path, 'utf8'));
-  if (![1, 2, 3].includes(state.version) || !state.entries || Array.isArray(state.entries) || typeof state.entries !== 'object') throw new Error('Invalid pstack install manifest.');
-  if (state.version === 3) {
+  return parseInstallationState(readFileSync(path, 'utf8'));
+}
+export function parseInstallationState(bytes) {
+  const state = JSON.parse(bytes);
+  if (![1, 2, 3, 4].includes(state.version) || !state.entries || Array.isArray(state.entries) || typeof state.entries !== 'object') throw new Error('Invalid pstack install manifest.');
+  if (state.version >= 3) {
     validateProvenance(state.provenance);
     if (!Array.isArray(state.hostObservations) || state.hostObservations.length > 3 || new Set(state.hostObservations.map(item => item?.host)).size !== state.hostObservations.length || state.hostObservations.some(item => !item || Object.keys(item).some(key => !['host', 'version', 'status'].includes(key)) || !hosts.slice(0, 3).includes(item.host) || !state.targets.includes(item.host) || !['observed', 'unavailable'].includes(item.status) || item.version !== null && (typeof item.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(item.version)))) throw new Error('Invalid installed host observations');
+  }
+  if (state.version === 4) {
+    validateGeneration(state.generation);
+    if (!/^[a-f0-9]{64}$/.test(state.renderingFingerprint) || Object.keys(state.entries).some(name => name.startsWith('.pstack/package/')) || state.entries['.pstack/package']?.kind !== 'link' || state.entries['.pstack/package'].to !== `releases/${state.generation.digest}` || JSON.stringify(state.provenance) !== JSON.stringify(state.generation.provenance)) throw new Error('Invalid retained installation receipt');
   }
   if (state.version === 1) state.targets = state.target === 'all' ? hosts.slice(0, 3) : [state.target];
   if (!Array.isArray(state.targets) || state.targets.some(target => !hosts.includes(target))) throw new Error('Invalid installed targets.');
