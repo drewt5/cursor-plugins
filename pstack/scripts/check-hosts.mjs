@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { prepareStagedActivation, applyStagedActivation } from './lib/installation-activation.mjs';
+import { rollbackInstallation } from './lib/installation-rollback.mjs';
+import { removeInstallation } from './lib/installation-removal.mjs';
 import { stagePackage, renderStagedArtifacts, verifyGeneration } from './lib/installation-storage.mjs';
 import { observeHost, loadHosts } from './lib/tested-hosts.mjs';
 import { inspectNativeDiscovery, inspectClaudePlugin } from './lib/installation-discovery.mjs';
@@ -73,6 +76,23 @@ try {
     restoreCopiedFixture();
     install('opencode', true);
     console.log(`OpenCode: all ${expected.length} skills and native subagent discovered.`);
+    const rollbackProject = join(temporary, 'rollback-project'), candidate = join(temporary, 'rollback-source'); mkdirSync(rollbackProject); cpSync(source, candidate, { recursive: true });
+    const lifecycleEnv = { ...isolated, ...env }, lifecycle = { source: candidate, root: rollbackProject, globalRoot: isolated.HOME, options: { target: 'opencode' }, env: lifecycleEnv };
+    mkdirSync(join(rollbackProject, '.pstack'));
+    const modelPath = join(rollbackProject, '.pstack/models.json');
+    writeFileSync(modelPath, JSON.stringify({ version: 1, roles: { 'bug-fix': 'pstack-fixture/model-A' } }));
+    assert.equal((await applyStagedActivation(await prepareStagedActivation(lifecycle))).status, 'applied');
+    writeFileSync(join(candidate, 'native-rollback-fixture.txt'), 'updated release');
+    assert.equal((await applyStagedActivation(await prepareStagedActivation(lifecycle))).status, 'applied');
+    const configB = JSON.stringify({ version: 1, roles: { 'bug-fix': 'pstack-fixture/model-B' } }); writeFileSync(modelPath, configB);
+    const rolled = await rollbackInstallation({ root: rollbackProject, globalRoot: isolated.HOME, env: lifecycleEnv }); assert.equal(rolled.status, 'applied'); assert.equal(rolled.regenerated, true); assert.equal(readFileSync(modelPath, 'utf8'), configB);
+    const nativeMap = JSON.parse(readFileSync(join(rollbackProject, '.pstack/opencode-models.json')));
+    assert.deepEqual(Object.keys(nativeMap.agents), ['pstack-fixture/model-B']);
+    const rolledDiscovery = await inspectNativeDiscovery({ host: 'opencode', executable: 'opencode', project: rollbackProject, scope: 'project', env: lifecycleEnv, expected, bundles: [join(rollbackProject, '.pstack/package')], agents: ['poteto-agent', 'comment-sicko', nativeMap.agents['pstack-fixture/model-B']], actualVersion: process.env.PSTACK_HOST_VERSION || loadHosts().find(row => row.host === 'opencode').version, environmentOwnership: 'isolated-test' });
+    assert.equal(rolledDiscovery.classification, 'identified-source', JSON.stringify(rolledDiscovery)); assert.match(JSON.stringify(rolledDiscovery.agents.at(-1).model), /model-B/);
+    assert.equal((await removeInstallation({ root: rollbackProject })).status, 'applied');
+    console.log('OpenCode rollback: retained previous renderer produced current model-B agents; native catalog confirmed identity and current model; config preserved.');
+
   }
   if (host === 'all' || host === 'codex') {
     install('codex');

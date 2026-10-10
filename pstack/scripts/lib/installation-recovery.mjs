@@ -1,3 +1,4 @@
+import { cleanupReleases } from './release-cleanup.mjs';
 import assert from 'node:assert/strict';
 import { rmdirSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -43,6 +44,7 @@ export async function recoverUnderLock(root, { boundary = async () => {} } = {})
   cleanupJournalMetadata(root, journal); await boundary('recovery:cleanup', journal);
   return { status: 'restored-prior', restored: true, operation: journal.id };
 }
+export const recoveryContract = 2;
 export async function recoverInstallation(root, { recoverDeadLocks = false, boundary, executablePackage } = {}) {
   root = canonicalPath(root); const journal = readActivationJournal(root);
   if (executablePackage && journal) assert.equal(canonicalPath(executablePackage), canonicalPath(resolve(root, (journal.recoveryGeneration ?? journal.generation).name)), 'Use the exact retained recovery command from doctor/journal');
@@ -51,7 +53,7 @@ export async function recoverInstallation(root, { recoverDeadLocks = false, boun
   const recoveredLocks = recoverDeadLocks ? recoverDemonstrablyDeadLocks(root, roots) : [];
   try {
     const result = await withInstallationMutation({ root, opencodeRoots: roots }, () => recoverUnderLock(root, { boundary }));
-    if (result.operation) { try { await withInstallationMutation({ root }, () => finishJournalCleanup(root, result.operation)); } catch (error) { result.cleanupPending = true; result.cleanupError = error.message; } }
+    if (result.operation) { try { await withInstallationMutation({ root }, () => { finishJournalCleanup(root, result.operation); if (result.status === 'committed-cleanup') result.cleanup = cleanupReleases(root); }); } catch (error) { result.cleanupPending = true; result.cleanupError = error.message; } }
     return { ...result, recoveredLocks };
   }
   catch (error) { if (journal) error.message += `\nRetry after resolving ownership: ${recoveryCommand(root, journal)}${/Installation busy/.test(error.message) ? ' --recover-dead-locks (only demonstrably dead owners are removed)' : ''}`; throw error; }

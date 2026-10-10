@@ -1,3 +1,5 @@
+import { capturePrevious, renderingFingerprint } from './installation-history.mjs';
+import { cleanupReleases } from './release-cleanup.mjs';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -22,10 +24,10 @@ export async function prepareStagedActivation(options) {
   const packageRoot = verifyGeneration(root, generation);
   const { loadModelConfig } = await import(pathToFileURL(join(packageRoot, 'skills/pstack-runtime/scripts/models.mjs')).href);
   const config = options.config ?? loadModelConfig({ project: root, home: options.globalRoot, configHome: options.env?.XDG_CONFIG_HOME, host: 'opencode' });
-  const renderingFingerprint = digest(JSON.stringify(Object.entries(config.roles).sort()));
+  const fingerprint = targets => renderingFingerprint(config, targets);
   const prepared = await prepareInstallation({ ...options, root, render: async args => {
     const artifacts = await renderStagedArtifacts({ ...args, root, generation, config });
-    artifacts.state.version = 4; artifacts.state.generation = generation; artifacts.state.renderingFingerprint = renderingFingerprint;
+    artifacts.state.version = 4; artifacts.state.generation = generation; artifacts.state.renderingFingerprint = fingerprint(artifacts.state.targets);
     parseInstallationState(JSON.stringify(artifacts.state));
     return artifacts;
   } });
@@ -75,9 +77,12 @@ export function buildActivationJournal(prepared) {
     before: prepared.legacy && op.name === '.pstack/package' ? { kind: 'absent' } : image(op.path, op.before), after: image(op.path, op.intended, op.intended.kind === 'file' ? plan.artifacts.contents.get(op.name) : undefined) }));
   operations.sort((a, b) => (a.name === '.pstack/package' ? -1 : b.name === '.pstack/package' ? 1 : a.name.localeCompare(b.name)));
   if (prepared.legacy) operations.unshift({ kind: 'legacy-directory', name: '.pstack/package', path: safePath(root, '.pstack/package'), backupName: `.pstack/legacy-${id}`, treeDigest: prepared.legacy.treeDigest, treeRows: prepared.legacy.treeRows, before: observe(safePath(root, '.pstack/package')), after: { kind: 'absent' } });
+  const changed = operations.length || plan.snapshot.previous.generation?.digest !== prepared.generation.digest || plan.snapshot.previous.renderingFingerprint !== plan.artifacts.state.renderingFingerprint;
+  const previous = changed ? capturePrevious(root, plan.snapshot.previous, prepared.legacy) : plan.snapshot.previous.previous;
+  if (previous && !prepared.noHistory) plan.artifacts.state.previous = previous;
   const receipt = JSON.stringify(plan.artifacts.state, null, 2) + '\n';
   const before = image(plan.snapshot.statePath, plan.snapshot.receipt);
-  const after = image(plan.snapshot.statePath, { kind: 'file', hash: digest(receipt), mode: 0o600 }, receipt);
+  const after = plan.artifacts.state.targets.length ? image(plan.snapshot.statePath, { kind: 'file', hash: digest(receipt), mode: 0o600 }, receipt) : { kind: 'absent' };
   const receiptUnchanged = matchesObserved(plan.snapshot.statePath, plan.snapshot.receipt, after);
   if (!operations.length && receiptUnchanged) return null;
   operations.push({ name: '.pstack/install.json', path: safePath(root, '.pstack/install.json'), before, after });
@@ -117,7 +122,7 @@ export async function applyActivationUnderLock(prepared, { boundary = async () =
 }
 export async function applyStagedActivation(prepared, options) {
   const result = await withInstallationMutation({ root: prepared.root, opencodeRoots: mutationRoots(prepared) }, () => applyActivationUnderLock(prepared, options));
-  if (result.operation) { try { await withInstallationMutation({ root: prepared.root }, () => finishJournalCleanup(prepared.root, result.operation)); } catch (error) { result.cleanupPending = true; result.cleanupError = error.message; } }
+  if (result.operation) { try { await withInstallationMutation({ root: prepared.root }, () => { finishJournalCleanup(prepared.root, result.operation); result.cleanup = cleanupReleases(prepared.root); }); } catch (error) { result.cleanupPending = true; result.cleanupError = error.message; } }
   return result;
 }
 
@@ -142,6 +147,6 @@ export async function runStagedInstallation(options, controls = {}) {
       throw error;
     }
   });
-  if (result.operation) { try { await withInstallationMutation({ root }, () => finishJournalCleanup(root, result.operation)); } catch (error) { result.cleanupPending = true; result.cleanupError = error.message; } }
+  if (result.operation) { try { await withInstallationMutation({ root }, () => { finishJournalCleanup(root, result.operation); result.cleanup = cleanupReleases(root); }); } catch (error) { result.cleanupPending = true; result.cleanupError = error.message; } }
   return result;
 }

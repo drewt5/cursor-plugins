@@ -1,3 +1,4 @@
+import { validatePrevious } from './installation-history.mjs';
 import { validateGeneration } from './generation-contract.mjs';
 import { validateProvenance } from './package-provenance.mjs';
 import { createHash } from 'node:crypto';
@@ -52,6 +53,7 @@ export function parseInstallationState(bytes) {
     validateProvenance(state.provenance);
     if (!Array.isArray(state.hostObservations) || state.hostObservations.length > 3 || new Set(state.hostObservations.map(item => item?.host)).size !== state.hostObservations.length || state.hostObservations.some(item => !item || Object.keys(item).some(key => !['host', 'version', 'status'].includes(key)) || !hosts.slice(0, 3).includes(item.host) || !state.targets.includes(item.host) || !['observed', 'unavailable'].includes(item.status) || item.version !== null && (typeof item.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(item.version)))) throw new Error('Invalid installed host observations');
   }
+  if (state.previous !== undefined) { if (state.version !== 4) throw new Error('Previous installation requires schema 4'); validatePrevious(state.previous); }
   if (state.version === 4) {
     validateGeneration(state.generation);
     if (!/^[a-f0-9]{64}$/.test(state.renderingFingerprint) || Object.keys(state.entries).some(name => name.startsWith('.pstack/package/')) || state.entries['.pstack/package']?.kind !== 'link' || state.entries['.pstack/package'].to !== `releases/${state.generation.digest}` || JSON.stringify(state.provenance) !== JSON.stringify(state.generation.provenance)) throw new Error('Invalid retained installation receipt');
