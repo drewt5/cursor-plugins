@@ -65,3 +65,9 @@ The mock API verifies integration, not model reasoning quality. External service
 Inside `pstack/`, `skills/`, `agents/`, and `automations/` contain the workflows. `scripts/` contains installation and validation entry points. `tests/` contains regression tests. The installer copies only this package, not the surrounding plugin repository. [Portability design](portability.md) describes the adapters and ownership model.
 
 MIT. Original copyright retained.
+
+## Inspect planned changes
+
+Add `--dry-run` to the same install or uninstall command to inspect a read-only JSON plan. Each operation includes its path, observed state, intended state, owning host/shared package, action (`create`, `replace`, `remove`, `unchanged`, or `conflict`), and reason. Conflicts are collected together and exit unsuccessfully without changing destination files. Apply checks that the inspected files and receipt have not changed before writing.
+
+The command entry points share `scripts/lib/installation-state.mjs` (validated receipts and destination snapshots), `installation-artifacts.mjs` (package/configuration rendering), and `installation-plan.mjs` (planning and apply). Downstream lifecycle work should consume these interfaces rather than duplicate ownership checks. This planner does not make a multi-file update transactional; recoverable activation remains separate work.
