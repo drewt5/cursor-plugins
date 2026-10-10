@@ -4,27 +4,11 @@ import { closeSync, mkdtempSync, mkdirSync, openSync, readFileSync, realpathSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isolatedEnvironment } from './test-environment.mjs';
-import { codexSkills } from './native-catalog.mjs';
+import { inspectNativeDiscovery, classifyDiscoveryCatalog } from './installation-discovery.mjs';
+import { characterizeDiscoverySafety } from './discovery-safety-check.mjs';
 import { loadHosts } from './tested-hosts.mjs';
 
-export function classifyScopeCatalog(entries, expected, bundles) {
-  bundles = bundles.map(bundle => realpathSync(bundle));
-  const relevant = entries.filter(entry => expected.includes(entry.name.replace(/^pstack:/, '')));
-  const canonical = relevant.map(entry => ({ ...entry, origin: realpathSync(entry.path) }));
-  const sources = new Map();
-  for (const entry of canonical) {
-    const name = entry.name;
-    if (!sources.has(name)) sources.set(name, new Set());
-    sources.get(name).add(entry.origin);
-  }
-  const complete = bundles.filter(bundle => expected.every(name => canonical.some(entry => entry.origin === join(bundle, 'skills', name, 'SKILL.md'))));
-  const nativeNames = new Set(canonical.filter(entry => bundles.some(bundle => entry.origin.startsWith(join(bundle, 'skills') + '/'))).map(entry => entry.name));
-  const external = canonical.filter(entry => !bundles.some(bundle => entry.origin.startsWith(join(bundle, 'skills') + '/')));
-  const other = external.filter(entry => nativeNames.has(entry.name));
-  const duplicate = [...sources.values()].some(origins => origins.size > 1);
-  const classification = other.length ? 'conflicting-registration' : complete.length === 1 && !duplicate ? 'identified-source' : 'ambiguous-sources';
-  return { classification, coherentBundle: classification === 'identified-source' ? complete[0] : null, completeBundles: complete, independentIdentities: external.filter(entry => !nativeNames.has(entry.name)).map(entry => entry.name), entries: canonical };
-}
+export const classifyScopeCatalog = classifyDiscoveryCatalog;
 export async function checkScopeContracts({ host, source, expected }) {
   const selected = loadHosts().filter(row => host === 'all' || row.host === host);
   for (const row of selected) {
@@ -50,16 +34,17 @@ export async function checkScopeContracts({ host, source, expected }) {
         results.push({ scenario, classification: 'unavailable-evidence', reason: 'No standalone catalog/origin command is exposed; standalone mock invocation is separate evidence.' });
         return;
       }
-      const entries = row.host === 'codex'
-        ? (await codexSkills(project, env)).data[0].skills.map(entry => ({ name: entry.name, path: entry.path }))
-        : JSON.parse(command('opencode', ['--pure', 'debug', 'skill'])).map(entry => ({ name: entry.name, path: entry.location }));
-      const result = classifyScopeCatalog(entries, expected, scopes.map(bundle));
+      const result = await inspectNativeDiscovery({ host: row.host, executable: row.executable, project, scope: scopes.join('+'), env, expected, bundles: scopes.map(bundle), actualVersion: process.env.PSTACK_HOST_VERSION || row.version, environmentOwnership: 'isolated-test' });
+      assert.equal(result.status, 'observed', JSON.stringify(result));
       results.push({ scenario, ...result });
       if (['project-only', 'global-only'].includes(scenario)) assert.equal(result.classification, 'identified-source', `${row.host} ${scenario}: ${result.classification}; ${result.completeBundles.length} complete bundles`);
     };
     try {
       command('git', ['init', '-q']);
-      install('project'); await inspect('project-only', ['project']); install('project', true);
+      install('project'); await inspect('project-only', ['project']);
+      const safety = await characterizeDiscoverySafety({ temporary, project, env, row, expected, bundles: [bundle('project')] });
+      results.push({ scenario: 'existing-environment-safety', classification: 'unavailable-evidence', ...safety });
+      install('project', true);
       install('global'); await inspect('global-only', ['global']);
       install('project'); await inspect('both-scopes', ['project', 'global']);
       install('global', true);
