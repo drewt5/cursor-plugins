@@ -49,7 +49,10 @@ export function stateFrom(path) {
 
 export function pathFor(root, name, state, inspectParents = true) {
   const locate = inspectParents ? safePath : installationPath;
-  return name.startsWith('@opencode/') ? locate(resolve(root, state.opencodeRoot), name.slice('@opencode/'.length)) : locate(root, name);
+  if (!name.startsWith('@opencode/')) return locate(root, name);
+  const base = resolve(root, state.opencodeRoot);
+  if (inspectParents && canonicalPath(base) !== base) throw new Error(`Refusing changed or symlinked OpenCode root: ${base}`);
+  return locate(base, name.slice('@opencode/'.length));
 }
 export function observe(path) {
   const stat = present(path);
@@ -59,11 +62,11 @@ export function observe(path) {
   if (stat.isFile()) return { kind: 'file', hash: digest(readFileSync(path)), mode };
   return { kind: stat.isDirectory() ? 'directory' : 'other', mode };
 }
-export function installationSnapshot({ root, desired, statePath = safePath(root, '.pstack/install.json') }) {
+export function installationSnapshot({ root, desired, includeEntry = () => true, statePath = safePath(root, '.pstack/install.json') }) {
   root = canonicalPath(root);
   const previous = stateFrom(statePath);
-  const owned = Object.entries(previous.entries).map(([name, entry]) => ({ name, entry, path: pathFor(root, name, previous, false) }));
-  const wanted = Object.entries(desired.entries).map(([name, entry]) => ({ name, entry, path: pathFor(root, name, desired, false) }));
+  const owned = Object.entries(previous.entries).filter(([name]) => includeEntry(name)).map(([name, entry]) => ({ name, entry, path: pathFor(root, name, previous, false) }));
+  const wanted = Object.entries(desired.entries).filter(([name]) => includeEntry(name)).map(([name, entry]) => ({ name, entry, path: pathFor(root, name, desired, false) }));
   const paths = [...new Set([...owned, ...wanted].map(item => item.path))].sort();
   const observed = {};
   for (const path of paths) {
@@ -74,4 +77,12 @@ export function installationSnapshot({ root, desired, statePath = safePath(root,
   }
   return { root, statePath, previous, targets: previous.targets, opencodeRoot: desired.opencodeRoot,
     owned, wanted, observed, receipt: observe(statePath) };
+}
+
+export function entryOwner(name) {
+  if (name.startsWith('.agents/')) return 'codex';
+  if (name.startsWith('@opencode/') || name.startsWith('.opencode/') || name === '.pstack/opencode-models.json') return 'opencode';
+  if (name.startsWith('.claude/')) return 'claude-code';
+  if (name.startsWith('.cursor/')) return 'cursor';
+  return 'shared-package';
 }
