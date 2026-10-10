@@ -4,6 +4,8 @@ This fork extends the `pstack/` plugin in [cursor/plugins](https://github.com/cu
 
 The fork's default branch, `main`, starts from upstream commit `d73344bee8cf22e53b9d5f4cf5749d38ba38c174`. It keeps upstream's history and directory layout. Portability changes are ordinary commits on `main`. The `upstream/main` remote-tracking branch tracks Cursor's version. Git records the merge base; there is no separate snapshot importer or upstream lock file.
 
+The [fork manifesto](MANIFESTO.md) defines the priorities for design, maintenance, and review.
+
 ## Install and verify
 
 From the repository root:
