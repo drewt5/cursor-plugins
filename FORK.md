@@ -21,6 +21,8 @@ Installation copies only `pstack/` into the destination. It does not install the
 
 ## Keep the changes scoped
 
+Follow [the contribution process](CONTRIBUTING.md) when implementing a fix or feature. Task scope and dependencies remain in GitHub issues.
+
 Maintain the host adapters in `pstack/scripts/`, `pstack/skills/pstack-runtime/`, and the host manifests and metadata. Keep shared workflow edits limited to capability resolution, portable paths, model preferences, and execution fallbacks. Preserve upstream's workflow intent.
 
 The intentional differences are:

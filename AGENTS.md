@@ -1,5 +1,7 @@
 # Pstack changes
 
+Follow [the contribution process](CONTRIBUTING.md) for task intake, isolated work, plan changes, verification, and handoff. It applies beyond the current roadmap.
+
 Read [the manifesto](MANIFESTO.md) before nontrivial design or plan work. Treat it as durable priorities, not a claim that planned features have shipped.
 
 Keep portability changes inside `pstack/` and its CI and fork documentation. Preserve other plugins.
