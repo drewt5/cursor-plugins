@@ -118,3 +118,59 @@ gh run download RUN_ID --repo drewt5/cursor-plugins --dir /tmp/pstack-canary-RUN
 Select the exact run created by the dispatch and compare its source commit, tested checkout, run ID/attempt and resolved versions before attribution. `provider-resolution.json` retains every host's registry outcome; `report.json` retains setup/discovery/invocation commands, assertions, versions and reproduction paths. Infrastructure or checkout failure may prevent artifacts, so read native job logs too. Registry failures are resolution failures; runtime/download/install failures are setup failures; discovery and protocol failures have separate phases. Genuine failures remain red and are advisory: pinned PR checks remain the reproducible gate. No auto-created issues, external messages, provider updates, releases or protection changes occur.
 
 A safe failure demonstration is available through `--field fixture=probe-failure`. It intentionally fails Codex's advisory invocation phase after setup/discovery; other hosts still run. The default `none` executes real mock invocation for every host. This fixture never changes the required PR workflow and is not a provider regression.
+
+## Triage provider drift
+
+Required PR checks use the reproducible baseline in `pstack/tested-hosts.json`. The advisory canary samples latest stable versions; a red canary does not make a previously tested baseline unsupported, and a green canary does not promote a pin. First establish the exact source and provider versions rather than attributing a red job from its title.
+
+1. Select the exact run URL, record its commit and attempt, and download that attempt's artifacts. For a scheduled/manual run, `sourceHeadSha` and `testedSha` must equal the run's `head_sha`. Read `provider-resolution.json` and each host's report. Compare expected/actual versions, resolution time, runner Node version, phase commands, error and raw log. A failed checkout or runner loss may have no artifact; use the native job log.
+
+   ```sh
+   gh api repos/drewt5/cursor-plugins/actions/runs/RUN_ID --jq '{head_sha,run_attempt,event,status,conclusion,html_url}'
+   gh run view RUN_ID --repo drewt5/cursor-plugins --log-failed
+   gh run download RUN_ID --repo drewt5/cursor-plugins --name pstack-canary-HOST-ATTEMPT --dir /tmp/pstack-drift-RUN_ID-ATTEMPT
+   gh run download RUN_ID --repo drewt5/cursor-plugins --name pstack-canary-resolution-ATTEMPT --dir /tmp/pstack-drift-resolution-RUN_ID-ATTEMPT
+   gh api repos/drewt5/cursor-plugins/commits/main --jq '.sha'
+   ```
+
+   Re-read the run identity after collecting evidence. If main advanced, this is evidence for the recorded older source, not proof of current code. Dispatch a fresh canary when current-source verification is needed. For a PR regression, use the current-head protocol above instead of substituting a canary run.
+
+2. Classify only as far as the evidence supports:
+
+   | Category | Evidence needed | Next action |
+   | --- | --- | --- |
+   | Infrastructure/download | Registry HTTP/network errors, unavailable runner, npm download failure, or absent checkout; no contradictory discovery assertion | One fresh retry is allowed for a plausible transient failure; compare the new attempt's source and resolved versions. |
+   | Provider discovery/protocol change | Setup/version matches, followed by a reproducible missing skill/origin or protocol assertion on the new exact provider | Reproduce the reported command with that exact CLI in an isolated environment; compare with the pinned baseline. |
+   | Fragile test expectation | Provider output still satisfies the required behavior, with evidence that only formatting or an overly narrow fixture changed | Fix the expectation without weakening loading, origin, invocation, or safety assertions; verify both baseline and candidate. |
+   | Intentional capability removal/runtime change | Provider release notes plus matching removal or `EBADENGINE` evidence | Keep the old pin; review the affected capability/runtime contract and release guidance before proposing promotion. |
+   | Unknown | Missing identities/logs, conflicting observations, or insufficient reproduction | Preserve evidence and state the uncertainty; investigate instead of changing pins or declaring compatibility. |
+
+   A second identical failure requires investigation, not another retry loop. To retry once, use `gh run rerun RUN_ID --repo drewt5/cursor-plugins`, then read its new `run_attempt` and artifacts. Registry tags can move between attempts; do not assume the sampled versions stayed fixed. An explicit `probe-failure` fixture is an intentional test failure, not provider drift.
+
+3. Report facts in a compact form. A real example is the [controlled failure run 38085367015](https://github.com/drewt5/cursor-plugins/actions/runs/38085367015/job/114310668545), attempt 1:
+
+   ```text
+   Source/tested checkout: 0cec3a39b28649fea8e342149cbe34458c40fc36
+   Host: codex; expected/actual: 0.162.1 / 0.162.1
+   Phase: invocation; exit: 1
+   Assertion: Intentional advisory probe-failure fixture
+   Classification: controlled fixture; no provider regression
+   Evidence: report.json, invocation.log and matching native job log
+   Diagnostic code: unavailable (doctor is not a prerequisite)
+   ```
+
+   Use the actual run/job URL in a new report. Do not copy this sample's commit, version, or classification to a different failure. The matching [normal run 38085301781](https://github.com/drewt5/cursor-plugins/actions/runs/38085301781) passed all three native lanes, including OpenCode 1.18.35 while its tested pin was 1.14.50. That sample proves the recorded fixtures, not every intervening version or model behavior.
+
+## Promote or reject a tested provider version
+
+Keep the current baseline until a reviewed PR is accepted. A successful canary alone never edits `tested-hosts.json`.
+
+1. Collect the exact candidate version, source/run/attempt identities, all required candidate capabilities, and release notes for changed capabilities or runtime requirements. Preserve useful evidence before its seven-day expiration. For metadata-only promotion, compare the canary source's discovery/invocation fixtures with the PR: unchanged fixtures plus the exact candidate version make that advisory evidence applicable. Changed fixtures need their own real native proof; an older canary cannot certify their new claims.
+2. Create a focused metadata PR changing the host's version in `pstack/tested-hosts.json`. Review any necessary host Node runtime/capability changes explicitly and add release guidance when those promises change. Preserve the complete fixed host set; do not add a copied support table, semver support range, second runner, or manual results database. Portable tooling remains Node 20.
+3. Validate `node pstack/scripts/host-matrix.mjs` and run the existing test/native entry points with the exact installed candidate. The installer does not install or downgrade providers. Use the provider's supported installation method in an isolated environment when reproducing; never disable another user installation to make a test green.
+4. Pass all required checks for the PR's current head, download matching reports, confirm candidate expected/actual versions and complete phase coverage, and perform the base-freshness check above. Link the applicable normal canary evidence and explain any source/fixture difference. Missing, skipped, stale, fixture-induced, or pending checks do not support promotion. Investigate material setup/phase cost rather than hiding it with weaker coverage.
+5. Merge through the normal reviewed contribution process, then verify a normal advisory run on the resulting main source. Tagging or publishing a pstack release remains a separate explicit maintainer decision; pin promotion does not close the release-readiness gate.
+
+If the candidate fails a required capability or needs an unaccepted runtime/scope change, reject promotion: retain the previous pin, record the failed phase and evidence in the proposed PR, and close or revise that proposal without changing repository protection. Leave genuine advisory failures red. Users may keep a verified provider version or choose an isolated compatible environment through the provider's own tooling; pstack does not manage or prevent external provider updates. Do not silently label an unknown version compatible or bypass preflight.
+
+These claims cover sampled versions and the fixture capabilities in the canonical metadata only. Cursor has static installer/manifest coverage, not GUI discovery proof. Mock API invocation proves expansion and a protocol round trip, not real-model reasoning or full workflow semantics. Providers and running sessions can change/cache instructions after installation; reload requirements and later diagnostics remain meaningful. Maintainers owning drift triage must subscribe to the workflow notifications described above; no unattended response, paging bot, or support SLA is promised. Doctor and release-candidate integration belongs to the later lifecycle gate, not this runbook's prerequisites.
