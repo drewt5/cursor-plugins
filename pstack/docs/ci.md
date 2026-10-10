@@ -101,3 +101,20 @@ Cursor receives installer, manifest, and schema coverage. The workflow does not 
 Each job writes atomic phase records and bounded raw logs outside the package checkout. `report.json` and `summary.md` derive from those records. Reports retain source and tested commit identities, host versions, phase commands, exit status, duration, errors, and reproduction commands. Artifacts expire after seven days. Failed or missing evidence and failed uploads fail the job. Checkout failure or runner loss can prevent artifacts, so the GitHub job result remains authoritative.
 
 `Pstack required` requires exactly the preparation, portable, helpers, and native groups, rejects every unsuccessful result, and revalidates the prepared matrix against the complete checked-in baseline. Missing preparation output or a partial matrix cannot pass. After this workflow lands and passes, configure the repository's branch protection or ruleset to require `Pstack required`. The workflow alone does not enforce merge protection. Update action and host pins in reviewed PRs and validate the hosted run before accepting a new baseline.
+
+## Latest-provider advisory checks
+
+`Pstack provider canary` runs on Monday at 13:17 UTC and supports a manual run against the fork default branch. It resolves each package's npm `latest` tag once, rejects prerelease/malformed results, saves exact versions and engine requirements, and installs those exact versions with `npm --engine-strict`. A new unsupported Node runtime is a red setup failure (`EBADENGINE`), not an omitted host. It uses the same discovery, mock invocation, installation helper and evidence reporter as the pinned baseline. It does not change `Pstack required` or update any user's providers.
+
+Maintainers responsible for drift triage must subscribe to GitHub Actions workflow notifications for this repository (GitHub notification settings, Actions, including failed workflows). Check the Actions tab's **Pstack provider canary** runs and job summaries; download `pstack-canary-resolution-ATTEMPT` and the three `pstack-canary-HOST-ATTEMPT` artifacts promptly because retention is seven days. GitHub can delay scheduled jobs and disables schedules after 60 days of inactivity in public repositories. A schedule file is not evidence that a particular weekly run executed. No unattended response or support SLA is promised.
+
+```sh
+gh workflow run pstack-canary.yml --repo drewt5/cursor-plugins --ref main
+gh run list --repo drewt5/cursor-plugins --workflow pstack-canary.yml --limit 5
+gh run view RUN_ID --repo drewt5/cursor-plugins --json headSha,event,status,conclusion,jobs,url
+gh run download RUN_ID --repo drewt5/cursor-plugins --dir /tmp/pstack-canary-RUN_ID
+```
+
+Select the exact run created by the dispatch and compare its source commit, tested checkout, run ID/attempt and resolved versions before attribution. `resolution.json` retains every host's registry outcome; `report.json` retains setup/discovery/invocation commands, assertions, versions and reproduction paths. Infrastructure or checkout failure may prevent artifacts, so read native job logs too. Registry failures are resolution failures; runtime/download/install failures are setup failures; discovery and protocol failures have separate phases. Genuine failures remain red and are advisory: pinned PR checks remain the reproducible gate. No auto-created issues, external messages, provider updates, releases or protection changes occur.
+
+A safe failure demonstration is available through `--field fixture=probe-failure`. It intentionally fails Codex's advisory invocation phase after setup/discovery; other hosts still run. The default `none` executes real mock invocation for every host. This fixture never changes the required PR workflow and is not a provider regression.

@@ -1,0 +1,103 @@
+name: Pstack provider canary
+on:
+  schedule:
+    - cron: '17 13 * * 1'
+  workflow_dispatch:
+    inputs:
+      fixture:
+        description: 'Safe advisory failure fixture (never changes required checks)'
+        type: choice
+        options: [none, probe-failure]
+        default: none
+permissions:
+  contents: read
+concurrency:
+  group: pstack-canary-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  resolve:
+    name: Resolve latest stable providers
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      matrix: ${{ steps.resolution.outputs.matrix }}
+    env:
+      PSTACK_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      PSTACK_CHECK: canary-resolution
+      PSTACK_ARTIFACT: pstack-canary-resolution-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        id: runtime
+        with:
+          node-version: 20
+      - name: Resolve complete host set once
+        id: resolution
+        run: node pstack/scripts/ci-report.mjs run resolution -- node pstack/scripts/resolve-providers.mjs
+      - name: Finalize evidence
+        if: always()
+        env:
+          PSTACK_STEPS: ${{ toJSON(steps) }}
+        run: node pstack/scripts/ci-report.mjs finalize resolution
+      - name: Upload resolution evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ env.PSTACK_ARTIFACT }}
+          path: ${{ runner.temp }}/pstack-evidence
+          if-no-files-found: error
+          retention-days: 7
+  native:
+    needs: [resolve]
+    name: Advisory native (${{ matrix.host }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    env:
+      PSTACK_CHECK: canary-${{ matrix.host }}
+      PSTACK_HOST: ${{ matrix.host }}
+      PSTACK_HOST_VERSION: ${{ matrix.version }}
+      PSTACK_HOST_RESOLUTION: ${{ toJSON(matrix) }}
+      PSTACK_ARTIFACT: pstack-canary-${{ matrix.host }}-${{ github.run_attempt }}
+      PSTACK_CANARY_FIXTURE: ${{ inputs.fixture || 'none' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        id: runtime
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install exact resolved host and enforce Node engines
+        id: setup
+        run: node pstack/scripts/ci-report.mjs run setup -- node pstack/scripts/install-host.mjs
+      - name: Native discovery
+        id: discovery
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node pstack/scripts/ci-report.mjs run discovery -- node pstack/scripts/check-hosts.mjs "$PSTACK_HOST"
+      - name: Native mock invocation or safe failure fixture
+        id: invocation
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          if [ "$PSTACK_CANARY_FIXTURE" = probe-failure ] && [ "$PSTACK_HOST" = codex ]; then
+            node pstack/scripts/ci-report.mjs run invocation -- node -e 'throw new Error("Intentional advisory probe-failure fixture")'
+          else
+            node pstack/scripts/ci-report.mjs run invocation -- node pstack/scripts/check-invocation.mjs "$PSTACK_HOST"
+          fi
+      - name: Finalize evidence
+        if: always()
+        env:
+          PSTACK_STEPS: ${{ toJSON(steps) }}
+        run: node pstack/scripts/ci-report.mjs finalize setup discovery invocation
+      - name: Upload native evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ env.PSTACK_ARTIFACT }}
+          path: ${{ runner.temp }}/pstack-evidence
+          if-no-files-found: error
+          retention-days: 7
