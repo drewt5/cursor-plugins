@@ -1,0 +1,89 @@
+import assert from 'node:assert/strict';
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
+import { canonicalPath, files, present, safePath } from './installation-state.mjs';
+import { packageDigest, packageInventory, readSourceProvenance, validateProvenance } from './package-provenance.mjs';
+
+const generationName = digest => {
+  assert.match(digest, /^[a-f0-9]{64}$/, 'Invalid generation digest');
+  return `.pstack/releases/${digest}`;
+};
+function regularTree(directory, prefix = '') {
+  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const name = prefix ? `${prefix}/${entry.name}` : entry.name, path = join(directory, entry.name);
+    assert.ok(!entry.isSymbolicLink(), `Unexpected stored symlink: ${name}`);
+    if (entry.isDirectory()) return regularTree(path, name);
+    assert.ok(entry.isFile(), `Unexpected stored path kind: ${name}`);
+    return [name];
+  }).sort();
+}
+function verifyPayload(path, provenance) {
+  assert.ok(lstatSync(path).isDirectory() && !lstatSync(path).isSymbolicLink(), 'Generation must be a real directory');
+  validateProvenance(provenance);
+  assert.equal(packageDigest(path), provenance.packageDigest, 'Stored package digest mismatch');
+  assert.deepEqual(regularTree(path), [...packageInventory(path).map(item => item.path), 'pstack-provenance.json'].sort(), 'Unexpected stored files');
+  assert.deepEqual(JSON.parse(readFileSync(join(path, 'pstack-provenance.json'), 'utf8')), provenance, 'Stored provenance mismatch');
+  return path;
+}
+export function verifyGeneration(root, generation) {
+  root = canonicalPath(root);
+  assert.equal(generation.name, generationName(generation.digest), 'Unexpected generation path');
+  assert.equal(generation.provenance.packageDigest, generation.digest, 'Generation identity mismatch');
+  const path = safePath(root, generation.name);
+  verifyPayload(path, generation.provenance);
+  return path;
+}
+export function stagePackage({ source, root, write = writeFileSync }) {
+  root = canonicalPath(root); source = canonicalPath(source);
+  const provenance = readSourceProvenance(source), inventory = packageInventory(source);
+  const generation = { digest: provenance.packageDigest, name: generationName(provenance.packageDigest), provenance,
+    renderer: { module: 'scripts/lib/installation-artifacts.mjs', export: 'renderArtifacts', contract: 1 } };
+  const destination = safePath(root, generation.name);
+  if (present(destination)) {
+    // A directory name is never evidence of its contents or provenance.
+    const stored = JSON.parse(readFileSync(join(destination, 'pstack-provenance.json'), 'utf8'));
+    validateProvenance(stored);
+    assert.equal(stored.version, provenance.version, 'Stored version mismatch');
+    assert.equal(stored.upstreamCommit, provenance.upstreamCommit, 'Stored upstream mismatch');
+    const retained = { ...generation, provenance: stored };
+    verifyGeneration(root, retained);
+    return { ...retained, reused: true };
+  }
+  const releases = safePath(root, '.pstack/releases');
+  mkdirSync(releases, { recursive: true });
+  const scratch = mkdtempSync(join(releases, '.stage-'));
+  try {
+    for (const name of files(source)) {
+      const input = join(source, name), output = safePath(scratch, name), mode = lstatSync(input).mode & 0o777;
+      mkdirSync(dirname(output), { recursive: true });
+      write(output, readFileSync(input), { flag: 'wx', mode });
+      chmodSync(output, mode);
+    }
+    write(join(scratch, 'pstack-provenance.json'), JSON.stringify(provenance, null, 2) + '\n', { flag: 'wx', mode: 0o644 });
+    assert.ok(isDeepStrictEqual(packageInventory(source), inventory), 'Source changed during staging');
+    verifyPayload(scratch, provenance);
+    safePath(root, generation.name);
+    assert.ok(!present(destination), 'Generation appeared during staging; retry under the scoped lock');
+    renameSync(scratch, destination);
+    verifyGeneration(root, generation);
+    return { ...generation, reused: false };
+  } finally {
+    // Only this invocation's unpredictable staging directory may be removed.
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+export async function renderStagedArtifacts({ root, generation, ...options }) {
+  const source = verifyGeneration(root, generation);
+  assert.deepEqual(generation.renderer, { module: 'scripts/lib/installation-artifacts.mjs', export: 'renderArtifacts', contract: 1 }, 'Unsupported retained renderer contract');
+  // Only a verified retained current/previous generation supplies this entry point.
+  const { renderArtifacts } = await import(pathToFileURL(join(source, generation.renderer.module)).href);
+  const result = renderArtifacts({ ...options, root, source });
+  for (const name of Object.keys(result.state.entries)) if (name.startsWith('.pstack/package/')) { delete result.state.entries[name]; result.contents.delete(name); }
+  if (result.state.targets.length) {
+    result.state.entries['.pstack/package'] = { kind: 'link', to: relative(join(root, '.pstack'), join(root, generation.name)) };
+    result.state.provenance = generation.provenance;
+  }
+  return result;
+}

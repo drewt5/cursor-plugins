@@ -1,11 +1,12 @@
 #!/usr/bin/env node
+import { stagePackage, renderStagedArtifacts, verifyGeneration } from './lib/installation-storage.mjs';
 import { observeHost, loadHosts } from './lib/tested-hosts.mjs';
 import { inspectNativeDiscovery, inspectClaudePlugin } from './lib/installation-discovery.mjs';
 import { checkScopeContracts } from './lib/scope-contracts.mjs';
 import { isolatedEnvironment } from './lib/test-environment.mjs';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readdirSync, rmSync, openSync, closeSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, symlinkSync, mkdtempSync, mkdirSync, readdirSync, rmSync, openSync, closeSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,12 +34,27 @@ function checkNames(names) {
 
 try {
   const install = (target, remove = false) => command(process.execPath, [join(source, 'scripts/install.mjs'), '--target', target, '--project', project, ...(remove ? ['--uninstall'] : [])], { XDG_CONFIG_HOME: join(temporary, 'config') });
+  async function stagedFixture(target) {
+    const generation = stagePackage({ source, root: project });
+    const artifacts = await renderStagedArtifacts({ root: project, generation, targets: [target], opencodeRoot: '.opencode' });
+    for (const [name, bytes] of artifacts.contents) {
+      const path = join(project, name.replace('@opencode/', '.opencode/'));
+      assert.equal(readFileSync(path, 'utf8'), bytes.toString(), `Retained renderer differs: ${name}`);
+    }
+    rmSync(join(project, '.pstack/package'), { recursive: true });
+    symlinkSync(artifacts.state.entries['.pstack/package'].to, join(project, '.pstack/package'));
+    return () => {
+      rmSync(join(project, '.pstack/package'));
+      cpSync(verifyGeneration(project, generation), join(project, '.pstack/package'), { recursive: true });
+    };
+  }
   command('git', ['init', '-q']);
   const host = process.argv[2] || 'all';
   assert.ok(['all', 'codex', 'opencode', 'claude-code'].includes(host), 'Expected all, codex, opencode, or claude-code');
   for (const row of loadHosts().filter(row => host === 'all' || row.host === host)) observeHost(row.host, { ...isolated, PSTACK_HOST_VERSION: process.env.PSTACK_HOST_VERSION || '' });
   if (host === 'all' || host === 'claude-code') {
-    const inventory = await inspectClaudePlugin({ executable: 'claude', source, project, env: isolated, environmentOwnership: 'isolated-test' });
+    const generation = stagePackage({ source, root: project });
+    const inventory = await inspectClaudePlugin({ executable: 'claude', source: verifyGeneration(project, generation), project, env: isolated, environmentOwnership: 'isolated-test' });
     checkNames(inventory.skills);
     assert.deepEqual(inventory.agents.sort(), ['comment-sicko', 'poteto-agent']);
     console.log(`Claude Code: manifest validated; all ${expected.length} skills and both plugin agents discovered.`);
@@ -47,17 +63,20 @@ try {
     mkdirSync(join(project, '.pstack'), { recursive: true });
     writeFileSync(join(project, '.pstack/models.json'), JSON.stringify({ version: 1, hosts: { opencode: { roles: { 'bug-fix': 'pstack-fixture/test' } } } }));
     install('opencode');
+    const restoreCopiedFixture = await stagedFixture('opencode');
     const env = { XDG_CONFIG_HOME: join(temporary, 'config'), XDG_DATA_HOME: join(temporary, 'data'), XDG_CACHE_HOME: join(temporary, 'cache'), XDG_STATE_HOME: join(temporary, 'state'), OPENCODE_DISABLE_MODELS_FETCH: 'true' };
     const mapping = JSON.parse(readFileSync(join(project, '.pstack/opencode-models.json'), 'utf8'));
     const discovery = await inspectNativeDiscovery({ host: 'opencode', executable: 'opencode', project, scope: 'project', env: { ...isolated, ...env }, expected, bundles: [join(project, '.pstack/package')], agents: ['poteto-agent', 'comment-sicko', mapping.agents['pstack-fixture/test']], actualVersion: process.env.PSTACK_HOST_VERSION || loadHosts().find(row => row.host === 'opencode').version, environmentOwnership: 'isolated-test' });
     assert.equal(discovery.status, 'observed', JSON.stringify(discovery));
     assert.equal(discovery.classification, 'identified-source', JSON.stringify(discovery));
     assert.match(JSON.stringify(discovery.agents.at(-1).model), /pstack-fixture/);
+    restoreCopiedFixture();
     install('opencode', true);
     console.log(`OpenCode: all ${expected.length} skills and native subagent discovered.`);
   }
   if (host === 'all' || host === 'codex') {
     install('codex');
+    await stagedFixture('codex');
     const discovery = await inspectNativeDiscovery({ host: 'codex', executable: 'codex', project, scope: 'project', env: isolated, expected, bundles: [join(project, '.pstack/package')], actualVersion: process.env.PSTACK_HOST_VERSION || loadHosts().find(row => row.host === 'codex').version, environmentOwnership: 'isolated-test' });
     assert.equal(discovery.status, 'observed', JSON.stringify(discovery));
     assert.equal(discovery.classification, 'identified-source', JSON.stringify(discovery));
