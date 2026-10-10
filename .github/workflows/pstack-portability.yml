@@ -122,16 +122,7 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Install and verify pinned host
         id: setup
-        run: |
-          node pstack/scripts/ci-report.mjs run setup -- bash -euo pipefail -c '
-            npm install --prefix "$RUNNER_TEMP/pstack-host" --no-audit --no-fund "$HOST_PACKAGE@$PSTACK_HOST_VERSION"
-            observed=$("$RUNNER_TEMP/pstack-host/node_modules/.bin/$HOST_EXECUTABLE" --version)
-            printf "%s\n" "$observed"
-            version=$(printf "%s\n" "$observed" | grep -Eo "[0-9]+\.[0-9]+\.[0-9]+" | head -1)
-            printf "%s\n" "$version" > "$RUNNER_TEMP/pstack-evidence/host-version.txt"
-            test "$version" = "$PSTACK_HOST_VERSION"
-          '
-          echo "$RUNNER_TEMP/pstack-host/node_modules/.bin" >> "$GITHUB_PATH"
+        run: node pstack/scripts/ci-report.mjs run setup -- node pstack/scripts/install-host.mjs
       - name: Native skill and agent discovery
         id: discovery
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}

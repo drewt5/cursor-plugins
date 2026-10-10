@@ -26,7 +26,7 @@ function identity() {
     event: env.GITHUB_EVENT_NAME || 'local',
     runId: env.GITHUB_RUN_ID || 'local',
     runAttempt: Number(env.GITHUB_RUN_ATTEMPT || 1),
-    sourceHeadSha: event.pull_request?.head?.sha || null,
+    sourceHeadSha: event.pull_request?.head?.sha || env.GITHUB_SHA || null,
     testedSha: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     check: env.PSTACK_CHECK || 'local',
   };
@@ -107,11 +107,20 @@ function finalize() {
     const baseline = loadHosts().find(row => row.host === env.PSTACK_HOST);
     assert.ok(baseline, `Unknown native host: ${env.PSTACK_HOST}`);
     host = { name: baseline.host, package: baseline.package, executable: baseline.executable, testedVersion: baseline.version, requiredNode: baseline.node, capabilities: baseline.capabilities, expectedVersion: env.PSTACK_HOST_VERSION || baseline.version, actualVersion };
+    if (env.PSTACK_HOST_RESOLUTION) {
+      const candidate = JSON.parse(env.PSTACK_HOST_RESOLUTION);
+      assert.equal(candidate.host, host.name);
+      assert.equal(candidate.package, host.package);
+      assert.equal(candidate.version, host.expectedVersion);
+      assert.equal(candidate.resolution.sourceCommit, current.testedSha);
+      host.resolution = candidate.resolution;
+    }
     if (actualVersion !== host.expectedVersion) failures.push(`Host version mismatch: expected ${host.expectedVersion}, observed ${actualVersion}`);
   }
   const report = { schemaVersion: 1, ...current, os: process.platform, node: process.version, host, artifact: env.PSTACK_ARTIFACT || null, status: phases.every(phase => phase.status === 'passed') && failures.length === 0 ? 'passed' : 'failed', failures, phases };
   save('report.json', report);
   const lines = [`## Pstack ${escape(report.check)}: ${report.status}`, '', `Source head: ${escape(report.sourceHeadSha || 'not a pull request')}`, `Tested checkout: ${escape(report.testedSha)}`, `Run: ${escape(report.runId)}, attempt ${report.runAttempt}`, `Artifact: ${escape(report.artifact || directory)}`, `Node: ${escape(report.node)}${host ? `; ${escape(host.name)}: ${escape(host.actualVersion || 'unavailable')} (expected ${escape(host.expectedVersion)})` : ''}`, '', '| Phase | Status | Duration | Reproduce |', '| --- | --- | --- | --- |', ...phases.map(phase => `| ${escape(phase.phase)} | ${phase.status} | ${phase.durationMs} ms | ${escape(phase.reproduce || 'Fix setup or missing evidence first')} |`), '', ...failures.map(error => `- ${escape(error)}`)];
+  if (host?.resolution) lines.push('', `Resolved: ${escape(host.resolution.resolvedAt)}; npm ${escape(host.resolution.tag)}; Node engine ${escape(host.resolution.nodeEngine)}`);
   for (const phase of phases.filter(phase => phase.status !== 'passed')) {
     lines.push('', `### ${escape(phase.phase)}`, '', escape(phase.error));
     if (phase.log) lines.push('', '<pre>', escape(readFileSync(join(directory, phase.log), 'utf8').slice(-4000)), '</pre>');

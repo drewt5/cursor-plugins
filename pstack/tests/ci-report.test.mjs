@@ -119,3 +119,20 @@ test('gate rejects empty, failed, skipped, cancelled, and missing job results', 
   }
   assert.equal(f.run(['gate'], { PSTACK_NEEDS: JSON.stringify({ ...needs, unexpected: { result: 'success' } }) }).status, 1);
 });
+test('advisory reports retain exact resolution and default-branch source identity', t => {
+  const f = fixture(t);
+  const event = join(f.directory, 'advisory-event.json'); writeFileSync(event, '{}');
+  const extra = { GITHUB_EVENT_PATH: event, GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_SHA: 'default-branch-source' };
+  assert.equal(f.run(['run', 'setup', '--', process.execPath, '-e', ''], extra).status, 0);
+  const tested = f.read('setup.json').identity.testedSha;
+  const row = loadHosts().find(row => row.host === 'codex');
+  const resolution = { resolvedAt: '2026-10-10T12:00:00.000Z', sourceCommit: tested, nodeEngine: '>=16', registry: 'https://registry.npmjs.org', tag: 'latest' };
+  writeFileSync(join(f.directory, 'host-version.txt'), row.version);
+  const env = { ...extra, PSTACK_HOST: 'codex', PSTACK_HOST_VERSION: row.version, PSTACK_HOST_RESOLUTION: JSON.stringify({ ...row, resolution }) };
+  assert.equal(f.run(['finalize', 'setup'], env).status, 0);
+  const report = f.read('report.json');
+  assert.equal(report.sourceHeadSha, 'default-branch-source');
+  assert.equal(report.pullRequest, null);
+  assert.deepEqual(report.host.resolution, resolution);
+  assert.equal(f.run(['finalize', 'setup'], { ...env, PSTACK_HOST_RESOLUTION: JSON.stringify({ ...row, version: '99.0.0', resolution }) }).status, 1);
+});
