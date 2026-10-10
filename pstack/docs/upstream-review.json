@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 1,
+  "upstreamCommit": "d73344bee8cf22e53b9d5f4cf5749d38ba38c174",
+  "sharedWorkflowDiffDigest": "6ea37bc83e4dfa6432b3950d779b90e1dbb45458fd3976529b294a49c3c1e887",
+  "inventory": {
+    "upstreamSkillCount": 51,
+    "currentSkillCount": 52,
+    "added": [
+      "pstack-runtime"
+    ],
+    "removed": []
+  },
+  "deviations": [
+    {
+      "paths": [
+        "pstack/skills/architect/agents/openai.yaml",
+        "pstack/skills/arena/agents/openai.yaml",
+        "pstack/skills/automate-me/agents/openai.yaml",
+        "pstack/skills/benchmark-checklist/agents/openai.yaml",
+        "pstack/skills/blast-radius/agents/openai.yaml",
+        "pstack/skills/bro/agents/openai.yaml",
+        "pstack/skills/correct/agents/openai.yaml",
+        "pstack/skills/create-verification-skill/agents/openai.yaml",
+        "pstack/skills/figure-it-out/agents/openai.yaml",
+        "pstack/skills/how/agents/openai.yaml",
+        "pstack/skills/interrogate/agents/openai.yaml",
+        "pstack/skills/maintain-verification-skill/agents/openai.yaml",
+        "pstack/skills/make-bot-ui/agents/openai.yaml",
+        "pstack/skills/no-comments/agents/openai.yaml",
+        "pstack/skills/poteto-help/agents/openai.yaml",
+        "pstack/skills/poteto-mode/agents/openai.yaml",
+        "pstack/skills/principle-attack-the-premise/agents/openai.yaml",
+        "pstack/skills/principle-boundary-discipline/agents/openai.yaml",
+        "pstack/skills/principle-build-the-lever/agents/openai.yaml",
+        "pstack/skills/principle-encode-lessons-in-structure/agents/openai.yaml",
+        "pstack/skills/principle-exhaust-the-design-space/agents/openai.yaml",
+        "pstack/skills/principle-experience-first/agents/openai.yaml",
+        "pstack/skills/principle-explain-the-number/agents/openai.yaml",
+        "pstack/skills/principle-fix-root-causes/agents/openai.yaml",
+        "pstack/skills/principle-foundational-thinking/agents/openai.yaml",
+        "pstack/skills/principle-guard-the-context-window/agents/openai.yaml",
+        "pstack/skills/principle-laziness-protocol/agents/openai.yaml",
+        "pstack/skills/principle-make-operations-idempotent/agents/openai.yaml",
+        "pstack/skills/principle-migrate-callers-then-delete-legacy-apis/agents/openai.yaml",
+        "pstack/skills/principle-minimize-reader-load/agents/openai.yaml",
+        "pstack/skills/principle-model-the-domain/agents/openai.yaml",
+        "pstack/skills/principle-never-block-on-the-human/agents/openai.yaml",
+        "pstack/skills/principle-outcome-oriented-execution/agents/openai.yaml",
+        "pstack/skills/principle-prove-it-works/agents/openai.yaml",
+        "pstack/skills/principle-redesign-from-first-principles/agents/openai.yaml",
+        "pstack/skills/principle-separate-before-serializing-shared-state/agents/openai.yaml",
+        "pstack/skills/principle-sequence-verifiable-units/agents/openai.yaml",
+        "pstack/skills/principle-subtract-before-you-add/agents/openai.yaml",
+        "pstack/skills/principle-test-behavior-not-implementation/agents/openai.yaml",
+        "pstack/skills/principle-type-system-discipline/agents/openai.yaml",
+        "pstack/skills/recall/agents/openai.yaml",
+        "pstack/skills/reflect/agents/openai.yaml",
+        "pstack/skills/show-me-your-work/agents/openai.yaml",
+        "pstack/skills/swarm/agents/openai.yaml",
+        "pstack/skills/tdd/agents/openai.yaml",
+        "pstack/skills/teach/agents/openai.yaml",
+        "pstack/skills/technical-writing/agents/openai.yaml",
+        "pstack/skills/typescript-best-practices/agents/openai.yaml",
+        "pstack/skills/unslop/agents/openai.yaml",
+        "pstack/skills/why/agents/openai.yaml"
+      ],
+      "rationale": "Codex descriptors preserve explicit-only invocation for workflows whose upstream frontmatter disables model invocation. Native metadata changes discovery registration, not the body or intent of the principles."
+    },
+    {
+      "paths": [
+        "pstack/skills/reflect/references/divergent-reviewer.md",
+        "pstack/skills/reflect/references/judgment-reviewer.md",
+        "pstack/skills/reflect/references/tooling-reviewer.md"
+      ],
+      "rationale": "Review actual discovered skill/delegation paths rather than Cursor-only transcript conventions. Templates still separate judgment, tooling and divergent review; permission intent is read-only without assuming a host-specific Ask mode removes connector access."
+    },
+    {
+      "paths": [
+        "pstack/skills/automate-me/SKILL.md",
+        "pstack/skills/create-verification-skill/SKILL.md",
+        "pstack/skills/maintain-verification-skill/SKILL.md",
+        "pstack/skills/make-bot-ui/SKILL.md",
+        "pstack/skills/no-comments/SKILL.md",
+        "pstack/skills/poteto-help/SKILL.md",
+        "pstack/skills/poteto-mode/SKILL.md",
+        "pstack/skills/recall/SKILL.md",
+        "pstack/skills/reflect/SKILL.md",
+        "pstack/skills/show-me-your-work/SKILL.md",
+        "pstack/skills/teach/SKILL.md"
+      ],
+      "rationale": "Route authoring, questions, skill roots and active-project history through available tools; retain privacy boundaries and explicit evidence gaps. Help/setup become optional rather than mandatory configuration. Bot UI needs an explicitly configured service and secure secret entry, defaults to localhost, and uses authorized OS-specific Tailscale setup. Teach retains progressive visual explanation with a drawable fallback when image generation is absent. Skill/agent metadata identifiers are normalized for portable discovery."
+    },
+    {
+      "paths": [
+        "pstack/skills/architect/SKILL.md",
+        "pstack/skills/arena/SKILL.md",
+        "pstack/skills/how/SKILL.md",
+        "pstack/skills/interrogate/SKILL.md",
+        "pstack/skills/swarm/SKILL.md",
+        "pstack/skills/why/SKILL.md"
+      ],
+      "rationale": "Keep design alternatives, fan-out, rubric-based selection and review lenses, but resolve models and delegation through the runtime. Two inherited-model seats are an intentional default change; same-model or sequential results must not be labeled diverse-model or independent evidence."
+    },
+    {
+      "paths": [
+        "pstack/skills/poteto-mode/scripts/transcript-activity.mjs",
+        "pstack/skills/poteto-mode/scripts/worktree-audit.sh"
+      ],
+      "rationale": "Keep transcript checks scoped to a supplied active-project file, support spaces and portable timestamps, and avoid treating closed unmerged PRs as landed cleanup candidates. These are generally useful helper correctness fixes, not a new orchestration service."
+    },
+    {
+      "paths": [
+        "pstack/agents/comment-sicko.md",
+        "pstack/agents/poteto-agent.md"
+      ],
+      "rationale": "Normalize comment-sicko to its portable agent identity and remove Cursor-specific background metadata. Poteto workers still read the same engineering principles; background execution is a capability, not a promised service."
+    },
+    {
+      "paths": [
+        "pstack/skills/pstack-runtime/SKILL.md",
+        "pstack/skills/pstack-runtime/references/claude-code.md",
+        "pstack/skills/pstack-runtime/references/codex.md",
+        "pstack/skills/pstack-runtime/references/cursor.md",
+        "pstack/skills/pstack-runtime/references/opencode.md",
+        "pstack/skills/pstack-runtime/scripts/models.mjs",
+        "pstack/skills/setup-pstack/SKILL.md"
+      ],
+      "rationale": "Add one runtime resolver rather than host-specific workflow copies. Replace mandatory Cursor model rules and hard-coded providers with optional scoped JSON, inherited models, and validated host overrides. This deliberately changes model/default setup behavior, while preserving explicit requirements for genuinely independent or diverse-model execution."
+    },
+    {
+      "paths": [
+        "pstack/skills/benchmark-checklist/SKILL.md",
+        "pstack/skills/blast-radius/SKILL.md",
+        "pstack/skills/bro/SKILL.md",
+        "pstack/skills/correct/SKILL.md",
+        "pstack/skills/figure-it-out/SKILL.md",
+        "pstack/skills/principle-attack-the-premise/SKILL.md",
+        "pstack/skills/principle-boundary-discipline/SKILL.md",
+        "pstack/skills/principle-build-the-lever/SKILL.md",
+        "pstack/skills/principle-encode-lessons-in-structure/SKILL.md",
+        "pstack/skills/principle-exhaust-the-design-space/SKILL.md",
+        "pstack/skills/principle-experience-first/SKILL.md",
+        "pstack/skills/principle-explain-the-number/SKILL.md",
+        "pstack/skills/principle-fix-root-causes/SKILL.md",
+        "pstack/skills/principle-foundational-thinking/SKILL.md",
+        "pstack/skills/principle-guard-the-context-window/SKILL.md",
+        "pstack/skills/principle-laziness-protocol/SKILL.md",
+        "pstack/skills/principle-make-operations-idempotent/SKILL.md",
+        "pstack/skills/principle-migrate-callers-then-delete-legacy-apis/SKILL.md",
+        "pstack/skills/principle-minimize-reader-load/SKILL.md",
+        "pstack/skills/principle-model-the-domain/SKILL.md",
+        "pstack/skills/principle-never-block-on-the-human/SKILL.md",
+        "pstack/skills/principle-outcome-oriented-execution/SKILL.md",
+        "pstack/skills/principle-prove-it-works/SKILL.md",
+        "pstack/skills/principle-redesign-from-first-principles/SKILL.md",
+        "pstack/skills/principle-separate-before-serializing-shared-state/SKILL.md",
+        "pstack/skills/principle-sequence-verifiable-units/SKILL.md",
+        "pstack/skills/principle-subtract-before-you-add/SKILL.md",
+        "pstack/skills/principle-test-behavior-not-implementation/SKILL.md",
+        "pstack/skills/principle-type-system-discipline/SKILL.md",
+        "pstack/skills/tdd/SKILL.md",
+        "pstack/skills/technical-writing/SKILL.md",
+        "pstack/skills/typescript-best-practices/SKILL.md",
+        "pstack/skills/unslop/SKILL.md"
+      ],
+      "rationale": "These principle/workflow bodies retain upstream content; the changed paths add explicit OpenCode slash/autoinvoke metadata and the shared runtime pre-read. Do not infer model reasoning or every workflow semantic result from metadata/native loading tests."
+    },
+    {
+      "paths": [
+        "pstack/skills/poteto-mode/playbooks/authoring-a-skill.md",
+        "pstack/skills/poteto-mode/playbooks/autonomous-run.md",
+        "pstack/skills/poteto-mode/playbooks/autopilot-full.md",
+        "pstack/skills/poteto-mode/playbooks/autopilot-stack.md",
+        "pstack/skills/poteto-mode/playbooks/babysit.md",
+        "pstack/skills/poteto-mode/playbooks/bug-fix.md",
+        "pstack/skills/poteto-mode/playbooks/eval.md",
+        "pstack/skills/poteto-mode/playbooks/feature.md",
+        "pstack/skills/poteto-mode/playbooks/hillclimb.md",
+        "pstack/skills/poteto-mode/playbooks/multi-phase-plan.md",
+        "pstack/skills/poteto-mode/playbooks/opening-a-pr.md",
+        "pstack/skills/poteto-mode/playbooks/orchestrate.md",
+        "pstack/skills/poteto-mode/playbooks/perf-issue.md",
+        "pstack/skills/poteto-mode/playbooks/refactoring.md",
+        "pstack/skills/poteto-mode/playbooks/session-pickup.md",
+        "pstack/skills/poteto-mode/playbooks/shipping.md",
+        "pstack/skills/poteto-mode/playbooks/visual-parity.md",
+        "pstack/skills/poteto-mode/playbooks/worktree-cleanup.md"
+      ],
+      "rationale": "Replace Cursor Task/model/private-state/loop assumptions with runtime roles, actual delegation or disclosed sequential passes, portable .pstack state, and available schedulers. Preserve phase goals, verification, and isolated writes. Active-session continuation cannot substitute for persistent wakeups; independently executed/model-diverse work remains a gap when the host lacks it."
+    }
+  ],
+  "upstreamCandidates": [
+    {
+      "paths": [
+        "pstack/skills/poteto-mode/scripts/transcript-activity.mjs",
+        "pstack/skills/poteto-mode/scripts/worktree-audit.sh"
+      ],
+      "rationale": "Portable timestamp parsing, space-safe paths and closed-unmerged PR cleanup classification are useful independently of additional host adapters."
+    },
+    {
+      "paths": [
+        "pstack/skills/make-bot-ui/SKILL.md"
+      ],
+      "rationale": "Localhost defaults, secure secret entry and OS-specific authorized setup can improve the original integration without requiring the portable model system."
+    }
+  ],
+  "limitations": [
+    "Native discovery and mock round trips prove loading/protocol expansion, not real-model reasoning or every workflow outcome.",
+    "Independent/multi-model review, persistent scheduling, cloud execution and external integrations require actual configured capabilities; reduced-independence fallbacks are disclosed.",
+    "Cursor GUI resolution and Windows junction behavior lack native GUI/Windows CI evidence; static portability checks are the declared coverage.",
+    "Automatic existing-scope native catalog startup remains unavailable because pinned CLIs write state; isolated version probes preserve requested user state."
+  ],
+  "upgradeBaseline": {
+    "kind": "legacy-receipts",
+    "schemas": [
+      1,
+      2
+    ]
+  }
+}
