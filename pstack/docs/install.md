@@ -137,3 +137,19 @@ The shared `inspectExistingInstallation(options)` API combines static receipt/in
 `inspectNativeDiscovery` takes an explicit executable, project, scope, environment, expected identities/bundles, version, and bounded timeout. Only caller-owned `isolated-test` environments permit native startup. CI uses that same runner against its supplied temporary project, retains origin paths and source classifications, permits unrelated catalog entries, and checks relevant OpenCode agents. Native Claude plugin inventory uses a separate API and never substitutes for standalone discovery. Exact inventory checks remain isolated-fixture checks.
 
 CI scope artifacts include `existing-environment-safety`: a snapshot of temporary configuration/cache/state around startup and sentinel MCP/plugin checks. Automatic existing-scope calls must leave snapshots unchanged and sentinels unexecuted. Isolated startup records writes and sentinel outcomes; it establishes only that temporary view. Unknown provider versions remain unavailable for automatic existing-scope diagnosis. Explicit isolated CI candidate runs may collect unverified catalog evidence for advisory version testing. No discovery probe invokes the installer, runs a model request, disables plugins, or chooses a source by directory order.
+
+### Diagnose an installation
+
+Run doctor from a checkout or the installed package; it needs Node.js 20+, no Bun, authentication, or model request:
+
+```sh
+node pstack/scripts/doctor.mjs --project /absolute/path/to/project
+node pstack/scripts/doctor.mjs --global --target codex --json
+npm --prefix pstack run pstack:doctor -- --project /absolute/path/to/project --json
+```
+
+The default scope is the current project. Targets come from a valid receipt; `--target` narrows the inspection (`all` selects the three CLI hosts). An uninstalled scope without an explicit target reports detected CLI versions as information. Human output includes scope, release identity (unknown for older receipts), file integrity, executable/version, discovery limits, findings, and safe next actions. JSON has schema version 1, structured findings, observed versions, and explicit verification states; stdout contains only JSON and execution/usage diagnostics go to stderr.
+
+Exit 0 means no actionable failure, including clearly marked advisory unknowns. Exit 1 means an actionable installation or selected-host failure. Exit 2 means usage or internal diagnostic execution failed. A JSON consumer must inspect `integrity`, `discovery`, and finding `verification`; exit 0 does not prove complete native verification. Recorded scope overlap remains advisory when active resolution is unavailable. Unrelated plugins may change runtime resolution beyond the safe static view; doctor reports that visibility limit instead of launching them.
+
+Preserve local edits or replacements before repairing the managed path. Install or repair a missing provider using its supported tooling. For an untested provider version, collect isolated compatibility evidence or manually return to the reported tested version; doctor does not update/downgrade providers or disable plugins. Existing running sessions may retain old skills until restart. Doctor has no repair mode and never changes the installation.
