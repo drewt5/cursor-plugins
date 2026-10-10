@@ -1,13 +1,23 @@
 import { spawnSync } from 'node:child_process';
-import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { isolatedEnvironment } from './test-environment.mjs';
+import { homedir, tmpdir } from 'node:os';
+import { delimiter, join, resolve } from 'node:path';
 import { canonicalPath, digest, isPackagePath, entryOwner, hosts, installationSnapshot, present, safePath, stateFrom } from './installation-state.mjs';
 import { loadHosts } from './tested-hosts.mjs';
 
 export function probeHostVersion(row, env = process.env, timeout = 3000) {
   const command = [row.executable, '--version'];
-  const result = spawnSync(command[0], command.slice(1), { env, encoding: 'utf8', timeout, killSignal: 'SIGKILL', maxBuffer: 8192 });
-  const evidence = { command, exitCode: result.status, signal: result.signal, errorCode: result.error?.code ?? null,
+  const scratch = mkdtempSync(join(tmpdir(), 'pstack-version-probe-'));
+  let result;
+  try {
+    const isolated = isolatedEnvironment(scratch, env);
+    if (env.PATH !== undefined) isolated.PATH = env.PATH.split(delimiter).map(path => resolve(path || '.')).join(delimiter);
+    const temporary = join(scratch, 'tmp'); mkdirSync(temporary);
+    Object.assign(isolated, { TMPDIR: temporary, TMP: temporary, TEMP: temporary, PWD: scratch });
+    result = spawnSync(command[0], command.slice(1), { cwd: scratch, env: isolated, encoding: 'utf8', timeout, killSignal: 'SIGKILL', maxBuffer: 8192 });
+  } finally { rmSync(scratch, { recursive: true, force: true }); }
+  const evidence = { command, environment: 'disposable-home-project-config-cache-state', exitCode: result.status, signal: result.signal, errorCode: result.error?.code ?? null,
     output: String(result.stdout || '').slice(-1024), error: String(result.stderr || '').slice(-1024), testedVersion: row.version };
   if (result.error?.code === 'ENOENT') return { code: 'HOST_MISSING', status: 'failed', evidence };
   if (result.error?.code === 'ETIMEDOUT') return { code: 'HOST_PROBE_TIMEOUT', status: 'failed', evidence };

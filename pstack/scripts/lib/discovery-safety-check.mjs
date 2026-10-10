@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { probeHostVersion } from './installation-diagnostics.mjs';
 import { inspectNativeDiscovery } from './installation-discovery.mjs';
 function snapshot(root, prefix = '') {
   return Object.fromEntries(readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap(entry => {
@@ -22,11 +23,15 @@ export async function characterizeDiscoverySafety({ temporary, project, env, row
     writeFileSync(join(env.CODEX_HOME, 'config.toml'), `[mcp_servers.pstack_sentinel]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(sentinel)}]\n`);
   }
   const before = snapshot(temporary);
+  const version = probeHostVersion(row, env);
+  assert.equal(version.evidence.actualVersion, process.env.PSTACK_HOST_VERSION || row.version, JSON.stringify(version));
+  assert.deepEqual(snapshot(temporary), before, 'Version probe changed the supplied user scope');
+  const versionProbe = { actualVersion: version.evidence.actualVersion, environment: version.evidence.environment, requestedStateUnchanged: true };
   const options = { host: row.host, executable: row.executable, project, scope: 'project', env, expected, bundles, actualVersion: process.env.PSTACK_HOST_VERSION || row.version };
   const automatic = await inspectNativeDiscovery(options);
   assert.equal(automatic.status, 'unavailable'); assert.deepEqual(snapshot(temporary), before, 'Automatic existing-scope discovery wrote or executed a sentinel');
   const observed = await inspectNativeDiscovery({ ...options, environmentOwnership: 'isolated-test' });
   if (row.host !== 'claude-code') assert.equal(observed.status, 'observed', JSON.stringify(observed));
   const after = snapshot(temporary), changed = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(name => before[name] !== after[name]);
-  return { testedVersion: options.actualVersion, automaticReadOnly: false, automaticLaunch: 'disabled', automaticStateUnchanged: true, isolatedCatalogStatus: observed.status, changedPathCount: changed.length, changedPaths: changed.slice(0, 40), sentinelExecuted: existsSync(marker), decision: 'Existing-scope startup remains unavailable; isolated-test observations do not establish complete user resolution.' };
+  return { testedVersion: options.actualVersion, versionProbe, automaticReadOnly: false, automaticLaunch: 'disabled', automaticStateUnchanged: true, isolatedCatalogStatus: observed.status, changedPathCount: changed.length, changedPaths: changed.slice(0, 40), sentinelExecuted: existsSync(marker), decision: 'Existing-scope startup remains unavailable; isolated-test observations do not establish complete user resolution.' };
 }
