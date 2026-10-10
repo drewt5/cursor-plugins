@@ -8,5 +8,5 @@ export function validateGeneration(value) {
   assert.ok(value && Object.keys(value).every(key => ['digest', 'name', 'provenance', 'renderer'].includes(key)), 'Invalid retained generation fields');
   assert.match(value.digest, /^[a-f0-9]{64}$/); assert.equal(value.name, `.pstack/releases/${value.digest}`);
   validateProvenance(value.provenance); assert.equal(value.provenance.packageDigest, value.digest);
-  assert.deepEqual(value.renderer, { module: 'scripts/lib/installation-artifacts.mjs', export: 'renderArtifacts', contract: 1 }, 'Unsupported retained renderer');
+  if (value.renderer !== null) assert.deepEqual(value.renderer, { module: 'scripts/lib/installation-artifacts.mjs', export: 'renderArtifacts', contract: 1 }, 'Unsupported retained renderer');
 }

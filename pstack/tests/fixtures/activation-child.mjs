@@ -5,7 +5,8 @@ const boundary = async (name, journal) => {
 };
 process.once('message', async options => {
   try {
-    const prepared = await prepareStagedActivation({ ...options, env: process.env, options: { target: 'cursor' } });
+    const prepared = options.prepared || await prepareStagedActivation({ ...options, env: process.env, options: { target: 'cursor' } });
+    if (options.prepared) prepared.plan.artifacts.contents = new Map(prepared.plan.artifacts.contents);
     const result = await applyStagedActivation(prepared, { boundary });
     process.send({ done: result.status }); process.disconnect();
   } catch (error) { process.send({ error: error.message }); process.disconnect(); process.exitCode = 1; }

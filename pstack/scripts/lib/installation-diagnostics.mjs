@@ -1,10 +1,11 @@
+import { inspectInterruptedOperation } from './activation-journal.mjs';
 import { verifyGeneration } from './installation-storage.mjs';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { isolatedEnvironment } from './test-environment.mjs';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
-import { canonicalPath, digest, isPackagePath, entryOwner, hosts, installationSnapshot, present, safePath, stateFrom } from './installation-state.mjs';
+import { isManagedEntryName, canonicalPath, digest, isPackagePath, entryOwner, hosts, installationSnapshot, present, safePath, stateFrom } from './installation-state.mjs';
 import { loadHosts } from './tested-hosts.mjs';
 
 export function probeHostVersion(row, env = process.env, timeout = 3000) {
@@ -27,12 +28,7 @@ export function probeHostVersion(row, env = process.env, timeout = 3000) {
   if (!version) return { code: 'HOST_VERSION_INVALID', status: 'failed', evidence };
   return { code: version === row.version ? null : 'HOST_VERSION_UNKNOWN', status: version === row.version ? 'observed-baseline' : 'unavailable-compatibility', evidence: { ...evidence, actualVersion: version } };
 }
-function managedName(name) {
-  return name === '.pstack/package' || /^\.pstack\/package\//.test(name) || name === '.pstack/opencode-models.json'
-    || /^\.agents\/skills\//.test(name) || /^\.(claude|cursor)\/(skills|agents)\//.test(name) || /^\.opencode\/(skills|agents|commands)\//.test(name)
-    || /^@opencode\/(skills|agents|commands)\//.test(name);
-}
-export function inspectInstallation({ root, global = false, targets, env = process.env, globalRoot = homedir(), versionProbe = probeHostVersion, snapshotReader = installationSnapshot }) {
+export function inspectInstallation({ root, global = false, targets, env = process.env, globalRoot = homedir(), versionProbe = probeHostVersion, snapshotReader = installationSnapshot, operationId }) {
   if (targets !== undefined && (!Array.isArray(targets) || targets.some(host => !hosts.includes(host)))) throw new Error('Invalid diagnostic host selection');
   const findings = [];
   const finding = (code, severity, subject, evidence, action, verification = 'verified') => findings.push({ code, severity, subject, evidence, action, verification });
@@ -42,7 +38,7 @@ export function inspectInstallation({ root, global = false, targets, env = proce
     result.scope.root = canonicalPath(root);
     const path = safePath(result.scope.root, '.pstack/install.json');
     previous = stateFrom(path);
-    if (Object.keys(previous.entries).some(name => !managedName(name))) throw new Error('Receipt contains paths outside managed package/host locations');
+    if (Object.keys(previous.entries).some(name => !isManagedEntryName(name))) throw new Error('Receipt contains paths outside managed package/host locations');
     result.receipt = { path, status: present(path) ? 'valid' : 'absent', schemaVersion: present(path) ? previous.version : null };
     result.targets = previous.targets;
     result.installedHostObservations = previous.version >= 3 ? previous.hostObservations : [];
@@ -89,6 +85,12 @@ export function inspectInstallation({ root, global = false, targets, env = proce
     if (result.receipt.status !== 'valid') result.receipt.status = 'invalid';
     result.integrity.status = 'unavailable';
     finding(['EACCES', 'EPERM'].includes(error.code) ? 'INSPECTION_DENIED' : 'RECEIPT_INVALID', 'error', result.scope.root, { errorCode: error.code ?? null, error: error.message }, 'Preserve the installation; restore access or a known valid receipt from backup. Do not edit receipt ownership fields or retry mutation blindly.');
+  }
+  const interrupted = inspectInterruptedOperation(result.scope.root); result.operation = interrupted;
+  if (interrupted.status !== 'absent' && interrupted.id !== operationId) {
+    result.state = interrupted.status === 'cleanup-pending' ? result.state : 'interrupted';
+    finding(interrupted.status === 'invalid' ? 'RECOVERY_STATE_INVALID' : interrupted.status === 'cleanup-pending' ? 'RECOVERY_CLEANUP_PENDING' : 'RECOVERY_REQUIRED', interrupted.status === 'cleanup-pending' ? 'warning' : 'error', result.scope.root, interrupted,
+      interrupted.command ? `Run ${interrupted.command}. For a demonstrably dead lock add --recover-dead-locks; live/unknown owners are preserved.` : 'Preserve the interrupted state and restore its valid journal/generation or original scope location before retrying recovery.');
   }
   const selected = targets ?? previous?.targets ?? [];
   if (!Array.isArray(selected) || selected.some(host => !hosts.includes(host))) throw new Error('Invalid diagnostic host selection');

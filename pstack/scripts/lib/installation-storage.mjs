@@ -4,7 +4,7 @@ import { dirname, join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { canonicalPath, files, present, safePath } from './installation-state.mjs';
-import { packageDigest, packageInventory, readSourceProvenance, validateProvenance } from './package-provenance.mjs';
+import { packageDigest, packageInventory, readSourceProvenance, readLegacyProvenance, validateProvenance } from './package-provenance.mjs';
 
 const generationName = digest => {
   assert.match(digest, /^[a-f0-9]{64}$/, 'Invalid generation digest');
@@ -35,18 +35,18 @@ export function verifyGeneration(root, generation) {
   verifyPayload(path, generation.provenance);
   return path;
 }
-export function stagePackage({ source, root, write = writeFileSync }) {
+export function stagePackage({ source, root, write = writeFileSync, legacyIdentityUnknown = false }) {
   root = canonicalPath(root); source = canonicalPath(source);
-  const provenance = readSourceProvenance(source), inventory = packageInventory(source);
+  const provenance = legacyIdentityUnknown ? readLegacyProvenance(source) : readSourceProvenance(source), inventory = packageInventory(source);
   const generation = { digest: provenance.packageDigest, name: generationName(provenance.packageDigest), provenance,
-    renderer: { module: 'scripts/lib/installation-artifacts.mjs', export: 'renderArtifacts', contract: 1 } };
+    renderer: present(join(source, 'scripts/lib/installation-artifacts.mjs'))?.isFile() && present(join(source, 'release.json'))?.isFile() ? { module: 'scripts/lib/installation-artifacts.mjs', export: 'renderArtifacts', contract: 1 } : null };
   const destination = safePath(root, generation.name);
   if (present(destination)) {
     // A directory name is never evidence of its contents or provenance.
     const stored = JSON.parse(readFileSync(join(destination, 'pstack-provenance.json'), 'utf8'));
     validateProvenance(stored);
     assert.equal(stored.version, provenance.version, 'Stored version mismatch');
-    assert.equal(stored.upstreamCommit, provenance.upstreamCommit, 'Stored upstream mismatch');
+    assert.ok(stored.upstreamCommit === provenance.upstreamCommit || stored.classification === 'legacy-unknown' || provenance.classification === 'legacy-unknown', 'Stored upstream mismatch');
     const retained = { ...generation, provenance: stored };
     verifyGeneration(root, retained);
     return { ...retained, reused: true };
