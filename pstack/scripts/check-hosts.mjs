@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { observeHost, loadHosts } from './lib/tested-hosts.mjs';
 import { isolatedEnvironment } from './lib/test-environment.mjs';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
@@ -72,6 +73,7 @@ try {
   command('git', ['init', '-q']);
   const host = process.argv[2] || 'all';
   assert.ok(['all', 'codex', 'opencode', 'claude-code'].includes(host), 'Expected all, codex, opencode, or claude-code');
+  for (const row of loadHosts().filter(row => host === 'all' || row.host === host)) observeHost(row.host, { ...isolated, PSTACK_HOST_VERSION: process.env.PSTACK_HOST_VERSION || '' });
   if (host === 'all' || host === 'claude-code') {
     command('claude', ['plugin', 'validate', source]);
     const inventory = command('claude', ['--plugin-dir', source, 'plugin', 'details', 'pstack']);

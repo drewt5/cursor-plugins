@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "hosts": [
+    {
+      "host": "codex",
+      "package": "@openai/codex",
+      "executable": "codex",
+      "version": "0.162.1",
+      "node": 22,
+      "capabilities": [
+        "project-skill-discovery",
+        "standalone-mock-invocation"
+      ]
+    },
+    {
+      "host": "opencode",
+      "package": "opencode-ai",
+      "executable": "opencode",
+      "version": "1.14.50",
+      "node": 22,
+      "capabilities": [
+        "project-skill-discovery",
+        "native-agent-discovery",
+        "standalone-mock-invocation"
+      ]
+    },
+    {
+      "host": "claude-code",
+      "package": "@anthropic-ai/claude-code",
+      "executable": "claude",
+      "version": "2.1.296",
+      "node": 22,
+      "capabilities": [
+        "native-plugin-inventory",
+        "standalone-mock-invocation",
+        "native-plugin-mock-invocation"
+      ]
+    }
+  ]
+}
