@@ -13,6 +13,7 @@
     "test:unit": "node scripts/test.mjs --unit",
     "test:repeat": "node scripts/test.mjs --repeat 2",
     "pstack:install": "node scripts/install.mjs",
-    "pstack:uninstall": "node scripts/uninstall.mjs"
+    "pstack:uninstall": "node scripts/uninstall.mjs",
+    "pstack:doctor": "node scripts/doctor.mjs"
   }
 }
