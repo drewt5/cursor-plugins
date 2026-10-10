@@ -1,19 +1,12 @@
 import { chmodSync, mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { observe, pathFor, safePath } from './installation-state.mjs';
+import { entryOwner, observe, pathFor, safePath } from './installation-state.mjs';
 
 function matches(path, observed, entry) {
   if (!entry || observed.kind !== entry.kind) return false;
   return entry.kind === 'file' ? observed.hash === entry.hash
     : resolve(dirname(path), observed.to) === resolve(dirname(path), entry.to);
-}
-function owner(name) {
-  if (name.startsWith('.agents/')) return 'codex';
-  if (name.startsWith('@opencode/') || name === '.pstack/opencode-models.json') return 'opencode';
-  if (name.startsWith('.claude/')) return 'claude-code';
-  if (name.startsWith('.cursor/')) return 'cursor';
-  return 'shared-package';
 }
 export function planInstallation(snapshot, artifacts) {
   const previous = new Map(snapshot.owned.map(item => [item.path, item]));
@@ -31,7 +24,7 @@ export function planInstallation(snapshot, artifacts) {
     const attempted = next ? before.kind === 'absent' ? 'create' : 'replace' : 'remove';
     const wrongKind = before.kind !== 'absent' && before.kind !== (old?.entry ?? next?.entry).kind;
     const code = unsafe ? 'unsafe-parent' : conflict ? wrongKind ? 'wrong-path-kind' : old ? 'modified-owned' : 'unowned' : null;
-    operations.push({ path, name, ownership: old ? 'managed' : 'unowned', attempted, code, owner: owner(name), before, intended: next?.entry ?? { kind: 'absent' }, action,
+    operations.push({ path, name, ownership: old ? 'managed' : 'unowned', attempted, code, owner: entryOwner(name), before, intended: next?.entry ?? { kind: 'absent' }, action,
       reason: unsafe ? `${before.error}. No files changed; choose a project path without symlinked host directories or restore the intended directory yourself` : modified ? 'Locally modified pstack file; preserve or move it before retrying' : collision ? 'Install conflict: unowned content, including identical content, cannot be adopted; no files changed. Choose a separate project installation to preserve existing skills, or resolve this path yourself' : next ? 'Desired installation artifact' : 'No longer selected' });
   }
   return { snapshot, artifacts, operations, conflicts: operations.filter(op => op.action === 'conflict') };
