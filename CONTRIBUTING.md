@@ -63,6 +63,8 @@ For documentation-only changes, check actual commands, links, and consistency in
 
 Open a PR against the fork's `main` branch and monitor its current head through completion. Follow the CI protocol to inspect failed logs and artifacts, compare source and tested commits and run attempts, and recheck the PR head after collecting evidence. Missing, pending, cancelled, or stale checks are not verification. Fix failures caused by the change; identify infrastructure failures with evidence rather than treating them as a pass.
 
+A complete PR must include its current base branch and have passing checks for the resulting head. Follow [the base freshness check](pstack/docs/ci.md#keep-the-pr-branch-current) before handoff. If the base advances during verification, update the branch as needed and verify again. Record the verified base and head commits; previous green checks do not make an outdated branch complete.
+
 ## Leave a usable handoff
 
 The PR should let someone with no conversation history review and continue the work. Include:

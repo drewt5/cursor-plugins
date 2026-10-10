@@ -8,7 +8,8 @@ Keep detail proportional; remove prompts that do not apply. -->
 ## Verification
 
 <!-- Connect acceptance criteria to executed checks and results. Name tests, CI evidence,
-and material limits. Distinguish planned checks from completed verification. -->
+and material limits. Record the freshly checked base SHA and PR head SHA; the base must
+be included in that head. Distinguish planned checks from completed verification. -->
 
 ## Documentation and handoff
 
