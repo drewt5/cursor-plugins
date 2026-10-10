@@ -1,3 +1,4 @@
+import { loadHosts } from '../scripts/lib/tested-hosts.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -23,7 +24,7 @@ test('report and summary preserve identity, command, version, and successful evi
   const f = fixture(t);
   assert.equal(f.run(['run', 'discovery', '--', process.execPath, '-e', 'console.log("discovered")']).status, 0);
   writeFileSync(join(f.directory, 'host-version.txt'), '1.2.3\n');
-  assert.equal(f.run(['finalize', 'discovery'], { PSTACK_HOST: 'test', PSTACK_HOST_VERSION: '1.2.3' }).status, 0);
+  assert.equal(f.run(['finalize', 'discovery'], { PSTACK_HOST: 'codex', PSTACK_HOST_VERSION: '1.2.3' }).status, 0);
   const report = f.read('report.json');
   assert.equal(report.status, 'passed');
   assert.equal(report.repository, 'owner/repo');
@@ -86,7 +87,7 @@ test('step outcome cannot be hidden by a successful conclusion or command', t =>
 test('version mismatch and failed setup cannot pass', t => {
   const f = fixture(t);
   assert.equal(f.run(['run', 'unit', '--', process.execPath, '-e', '']).status, 0);
-  assert.equal(f.run(['finalize', 'unit'], { PSTACK_HOST: 'test', PSTACK_HOST_VERSION: '1.2.3' }).status, 1);
+  assert.equal(f.run(['finalize', 'unit'], { PSTACK_HOST: 'codex', PSTACK_HOST_VERSION: '1.2.3' }).status, 1);
   assert.equal(f.run(['finalize', 'unit'], { PSTACK_STEPS: '{"runtime":{"outcome":"failure"}}' }).status, 1);
 });
 test('untrusted output is command-disabled and escaped in the summary', t => {
@@ -103,5 +104,18 @@ test('gate rejects empty, failed, skipped, cancelled, and missing job results', 
   for (const needs of [{}, { native: {} }, ...['failure', 'skipped', 'cancelled'].map(result => ({ native: { result } }))]) {
     assert.equal(f.run(['gate'], { PSTACK_NEEDS: JSON.stringify(needs) }).status, 1);
   }
-  assert.equal(f.run(['gate'], { PSTACK_NEEDS: '{"portable":{"result":"success"},"helpers":{"result":"success"},"native":{"result":"success"}}' }).status, 0);
+  const needs = { prepare: { result: 'success', outputs: { matrix: JSON.stringify({ include: loadHosts() }) } }, portable: { result: 'success' }, helpers: { result: 'success' }, native: { result: 'success' } };
+  assert.equal(f.run(['gate'], { PSTACK_NEEDS: JSON.stringify(needs) }).status, 0);
+  for (const name of Object.keys(needs)) {
+    const missing = { ...needs }; delete missing[name];
+    assert.equal(f.run(['gate'], { PSTACK_NEEDS: JSON.stringify(missing) }).status, 1);
+  }
+  for (const result of ['failure', 'skipped', 'cancelled']) {
+    assert.equal(f.run(['gate'], { PSTACK_NEEDS: JSON.stringify({ ...needs, native: { result } }) }).status, 1);
+  }
+  assert.equal(f.run(['gate'], { PSTACK_NEEDS: JSON.stringify({ ...needs, prepare: { result: 'success' } }) }).status, 1);
+  for (const include of [[], loadHosts().slice(1), [...loadHosts(), loadHosts()[0]]]) {
+    assert.equal(f.run(['gate'], { PSTACK_NEEDS: JSON.stringify({ ...needs, prepare: { result: 'success', outputs: { matrix: JSON.stringify({ include }) } } }) }).status, 1);
+  }
+  assert.equal(f.run(['gate'], { PSTACK_NEEDS: JSON.stringify({ ...needs, unexpected: { result: 'success' } }) }).status, 1);
 });

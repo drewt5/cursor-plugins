@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { loadHosts } from './lib/tested-hosts.mjs';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -103,7 +104,9 @@ function finalize() {
   if (env.PSTACK_HOST) {
     let actualVersion = null;
     try { actualVersion = readFileSync(join(directory, 'host-version.txt'), 'utf8').trim(); } catch {}
-    host = { name: env.PSTACK_HOST, expectedVersion: env.PSTACK_HOST_VERSION, actualVersion };
+    const baseline = loadHosts().find(row => row.host === env.PSTACK_HOST);
+    assert.ok(baseline, `Unknown native host: ${env.PSTACK_HOST}`);
+    host = { name: baseline.host, package: baseline.package, executable: baseline.executable, testedVersion: baseline.version, requiredNode: baseline.node, capabilities: baseline.capabilities, expectedVersion: env.PSTACK_HOST_VERSION || baseline.version, actualVersion };
     if (actualVersion !== host.expectedVersion) failures.push(`Host version mismatch: expected ${host.expectedVersion}, observed ${actualVersion}`);
   }
   const report = { schemaVersion: 1, ...current, os: process.platform, node: process.version, host, artifact: env.PSTACK_ARTIFACT || null, status: phases.every(phase => phase.status === 'passed') && failures.length === 0 ? 'passed' : 'failed', failures, phases };
@@ -121,7 +124,10 @@ function finalize() {
 }
 function gate() {
   const needs = JSON.parse(env.PSTACK_NEEDS || '{}');
-  assert.ok(Object.keys(needs).length > 0, 'No prerequisite job results');
+  const hosts = loadHosts();
+  assert.deepEqual(Object.keys(needs).sort(), ['prepare', 'portable', 'helpers', 'native'].sort(), 'Expected exact prerequisite jobs: prepare, portable, helpers, native');
+  const matrix = JSON.parse(needs.prepare.outputs?.matrix || 'null');
+  assert.deepEqual(matrix, { include: hosts }, 'Prepared matrix does not match the complete tested baseline');
   const failed = Object.entries(needs).filter(([, job]) => job.result !== 'success');
   assert.equal(failed.length, 0, `Prerequisite jobs did not succeed: ${failed.map(([name, job]) => `${name}=${job.result}`).join(', ')}`);
   console.log('All pstack job groups passed.');

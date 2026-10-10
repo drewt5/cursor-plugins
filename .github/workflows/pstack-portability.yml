@@ -11,6 +11,22 @@ concurrency:
   group: pstack-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  prepare:
+    name: Pstack host matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 20
+      - name: Validate the complete tested-host matrix
+        id: matrix
+        run: node pstack/scripts/host-matrix.mjs
   portable:
     name: Pstack portable (${{ matrix.os }})
     strategy:
@@ -82,25 +98,13 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   native:
+    needs: [prepare]
     name: Pstack native (${{ matrix.host }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - host: codex
-            package: '@openai/codex'
-            executable: codex
-            version: 0.162.1
-          - host: opencode
-            package: opencode-ai
-            executable: opencode
-            version: 1.14.50
-          - host: claude-code
-            package: '@anthropic-ai/claude-code'
-            executable: claude
-            version: 2.1.296
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     env:
       PSTACK_CHECK: native-${{ matrix.host }}
       PSTACK_HOST: ${{ matrix.host }}
@@ -115,7 +119,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         id: runtime
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
       - name: Install and verify pinned host
         id: setup
         run: |
@@ -152,7 +156,7 @@ jobs:
   required:
     name: Pstack required
     if: always()
-    needs: [portable, helpers, native]
+    needs: [prepare, portable, helpers, native]
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
