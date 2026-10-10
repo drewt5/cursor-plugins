@@ -1,3 +1,5 @@
+import { loadModelConfig } from '../../skills/pstack-runtime/scripts/models.mjs';
+import { renderingFingerprint } from './installation-history.mjs';
 import { inspectInterruptedOperation } from './activation-journal.mjs';
 import { verifyGeneration } from './installation-storage.mjs';
 import { spawnSync } from 'node:child_process';
@@ -63,6 +65,15 @@ export function inspectInstallation({ root, global = false, targets, env = proce
         }
       }
       if (findings.some(item => item.severity === 'error')) result.integrity.status = 'failed';
+      if (previous.version === 4) {
+        result.rollback = previous.previous ? { status: 'available', generation: previous.previous.state.generation, targets: previous.previous.state.targets, renderingFingerprint: previous.previous.state.renderingFingerprint } : { status: 'unavailable', reason: 'No previous successful installation' };
+        if (previous.previous) try { verifyGeneration(result.scope.root, previous.previous.state.generation); }
+        catch (error) { result.rollback.status = 'unavailable'; finding('ROLLBACK_UNAVAILABLE', 'warning', previous.previous.state.generation.name, { error: error.message }, 'Preserve the previous package; use an explicitly selected checkout to apply a release.'); }
+        try {
+          const config = loadModelConfig({ project: result.scope.root, home: globalRoot, configHome: env.XDG_CONFIG_HOME, host: 'opencode' });
+          if (renderingFingerprint(config, previous.targets) !== previous.renderingFingerprint) finding('MODEL_ADAPTERS_STALE', 'warning', result.scope.root, { recorded: previous.renderingFingerprint }, 'Apply install.mjs from the selected release to regenerate adapters for current model settings; rollback will render current settings with the verified previous release.');
+        } catch (error) { finding('MODEL_CONFIG_INVALID', 'warning', result.scope.root, { error: error.message }, 'Correct current model settings before applying an update or rollback.'); }
+      }
       if (previous.version >= 3) {
         const payload = snapshot.owned.filter(item => item.name.startsWith('.pstack/package/') && isPackagePath(item.name.slice('.pstack/package/'.length))).map(item => {
           const actual = snapshot.observed[item.path];

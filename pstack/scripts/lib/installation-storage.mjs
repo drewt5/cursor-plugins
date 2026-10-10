@@ -1,3 +1,4 @@
+import { ownershipName } from './release-cleanup.mjs';
 import assert from 'node:assert/strict';
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
@@ -68,6 +69,7 @@ export function stagePackage({ source, root, write = writeFileSync, legacyIdenti
     assert.ok(!present(destination), 'Generation appeared during staging; retry under the scoped lock');
     renameSync(scratch, destination);
     verifyGeneration(root, generation);
+    writeFileSync(safePath(root, ownershipName(generation.digest)), JSON.stringify(generation) + '\n', { flag: 'wx', mode: 0o600 });
     return { ...generation, reused: false };
   } finally {
     // Only this invocation's unpredictable staging directory may be removed.

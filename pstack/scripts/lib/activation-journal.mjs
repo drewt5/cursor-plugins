@@ -88,7 +88,7 @@ export function readActivationJournal(root) {
     assert.equal(op.path, expectedPath, 'Journal path differs from validated receipt'); assert.ok(!paths.has(op.path) || op.name === '.pstack/package' && journal.operations[0].kind === 'legacy-directory', 'Duplicated journal path'); paths.add(op.path);
     if (op.name === '.pstack/install.json') {
       if (op.before.kind === 'file') assert.deepEqual(parseInstallationState(Buffer.from(op.before.data, 'base64')), prior, 'Prior receipt image mismatch'); else assert.ok(!prior.targets.length && op.before.kind === 'absent');
-      assert.equal(op.after.kind, 'file'); assert.deepEqual(parseInstallationState(Buffer.from(op.after.data, 'base64')), intended, 'Intended receipt image mismatch');
+      if (intended.targets.length) { assert.equal(op.after.kind, 'file'); assert.deepEqual(parseInstallationState(Buffer.from(op.after.data, 'base64')), intended, 'Intended receipt image mismatch'); } else assert.equal(op.after.kind, 'absent');
     } else {
       const old = entryAt(root, prior, op.name, op.path), next = entryAt(root, intended, op.name, op.path);
       assert.ok(op.before.kind === 'absent' || matchesObserved(op.path, op.before, { ...old, mode: undefined }), 'Journal before image is not previously owned');
