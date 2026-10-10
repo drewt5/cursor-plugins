@@ -2,6 +2,12 @@
 
 This process applies to people and agents working on the portability fork. It covers future fixes and features as well as the current roadmap. Keep the process proportional: a small fix needs a clear scope and verification, not a design document.
 
+## Turn a report into verified work
+
+Use [the issue protocol](pstack/docs/issues.md) to report a problem, prepare a task, or split a plan. Human reports can start with a few sentences. The contributor taking on the work supplies implementation detail; the reporter does not need to understand the codebase.
+
+The workflow is report, triage, ready task, implementation, verified PR, and closure. These are working stages, not required labels or a new approval system. Before implementation, establish observable acceptance criteria and a verification plan. At handoff, show the evidence for those same criteria and update the relevant documentation. A filled template alone proves neither readiness nor completion.
+
 ## Start with the right context
 
 1. Read [AGENTS.md](AGENTS.md). For nontrivial design or scope decisions, read [MANIFESTO.md](MANIFESTO.md), which records durable priorities rather than shipped features.
@@ -61,6 +67,7 @@ The PR should let someone with no conversation history review and continue the w
 
 - The problem, resulting behavior, and issue resolved. Use closing keywords only for the individual issue fully resolved by the PR; do not close an umbrella tracker from a child task.
 - Acceptance evidence: commands and results, relevant hosted checks, and material limits or untested behavior.
+- A result for each acceptance criterion, grouped when one test covers several. Link to regression tests and updated user or maintainer documentation, or explain why documentation is unaffected. Distinguish checks actually run from planned checks.
 - For shared foundations, the actual modules and public interfaces, ownership and state invariants, and representative tests downstream work should reuse. Link to these artifacts rather than copying a second specification.
 - Any departure from the issue, remaining work, and affected downstream tasks. Distinguish implemented behavior from internal scaffolding and future public activation.
 
