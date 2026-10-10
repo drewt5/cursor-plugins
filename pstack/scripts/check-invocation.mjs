@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { observeHost, loadHosts } from './lib/tested-hosts.mjs';
 import { isolatedEnvironment } from './lib/test-environment.mjs';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -83,6 +84,7 @@ async function run(executable, args, extraEnv = {}) {
 try {
   const selected = process.argv[2] || 'all';
   assert.ok(['all', 'codex', 'opencode', 'claude-code'].includes(selected), 'Expected all, codex, opencode, or claude-code');
+  for (const row of loadHosts().filter(row => selected === 'all' || row.host === selected)) observeHost(row.host, { ...env, PSTACK_HOST_VERSION: process.env.PSTACK_HOST_VERSION || '' });
   const install = (target, uninstall = false) => {
     const result = spawnSync(process.execPath, [join(source, 'scripts/install.mjs'), '--target', target, '--project', project, ...(uninstall ? ['--uninstall'] : [])], { env, encoding: 'utf8', timeout: 30000 });
     assert.equal(result.status, 0, result.stderr);

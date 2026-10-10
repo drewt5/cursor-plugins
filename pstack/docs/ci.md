@@ -41,7 +41,7 @@ node pstack/scripts/check-hosts.mjs codex
 node pstack/scripts/check-invocation.mjs codex
 ```
 
-Replace `codex` with `opencode` or `claude-code` for another host. The full suite remains `npm --prefix pstack test`. Install the CLI versions pinned in `.github/workflows/pstack-portability.yml` when reproducing a CI failure. Native jobs use Node 22 because the pinned Claude package requires it. Pstack's portable checks use its minimum supported Node 20.
+Replace `codex` with `opencode` or `claude-code` for another host. The full suite remains `npm --prefix pstack test`. Install the CLI versions recorded in `pstack/tested-hosts.json` when reproducing a CI failure. Native jobs use the Node runtime recorded for each host in that metadata (currently Node 22). Pstack's portable checks use its minimum supported Node 20.
 
 ## Maintain the pipeline
 
@@ -49,7 +49,20 @@ Run the portability workflow for every PR, pushes to `main`, merge queues, and m
 
 - Unit, installer lifecycle, package, and shell checks on Linux and macOS with Node 20.
 - Bun helper tests and TypeScript checks once on Linux with Bun 1.3.12 and Node 20.
-- Native discovery and mock API invocation separately for Codex 0.162.1, OpenCode 1.14.50, and Claude Code 2.1.296 on Linux with Node 22.
+- Native discovery and mock API invocation separately for the three exact host versions and Node runtimes in [tested-hosts.json](../tested-hosts.json) on Linux.
+
+The `Pstack host matrix` preparation job validates exactly one row for Codex, OpenCode, and Claude Code and emits the native matrix. It runs alongside portable and helper checks; only native checks wait for it. A short preparation job is retained so invalid or incomplete metadata fails before any host installation. It adds checkout/runtime setup to the native critical path, rather than a second suite. Compare hosted job/phase timings when changing this pipeline; queue time varies between runs.
+
+The metadata is a tested baseline for the recorded capabilities, not a supported semver range. Package engines and a successful version probe do not establish discovery or invocation behavior. Capabilities describe these fixtures only: Claude plugin inventory is not standalone discovery, and mock invocation is not model reasoning. Portable Node and Bun pins remain in the workflow because they are not shared native-host inputs.
+
+To propose a new baseline, edit the host's single version field, keep package/executable mappings fixed, and run:
+
+```sh
+node pstack/scripts/host-matrix.mjs
+npm --prefix pstack test
+```
+
+The matrix validator is exercised by `test.mjs --unit` in both required portable lanes. Native checks probe the installed executable before discovery/invocation. They default to the metadata version; `PSTACK_HOST_VERSION=EXACT_VERSION` explicitly selects an expected candidate version for local reproduction or future advisory checks. CI supplies this value from the validated matrix. Reports retain the tested baseline, expected and actual versions, package, executable, required Node runtime, and fixture capabilities. Updating a version requires reviewed passing native checks; the version probe alone is insufficient.
 
 Native jobs install pinned npm packages into the runner's temporary directory and verify the CLI's reported version. Discovery failure does not suppress invocation after successful setup. The fixture uses isolated configuration and fake credentials. No paid model requests or repository secrets are required.
 
@@ -57,4 +70,4 @@ Cursor receives installer, manifest, and schema coverage. The workflow does not 
 
 Each job writes atomic phase records and bounded raw logs outside the package checkout. `report.json` and `summary.md` derive from those records. Reports retain source and tested commit identities, host versions, phase commands, exit status, duration, errors, and reproduction commands. Artifacts expire after seven days. Failed or missing evidence and failed uploads fail the job. Checkout failure or runner loss can prevent artifacts, so the GitHub job result remains authoritative.
 
-`Pstack required` rejects any prerequisite job group that is not successful. After this workflow lands and passes, configure the repository's branch protection or ruleset to require `Pstack required`. The workflow alone does not enforce merge protection. Update action and host pins in reviewed PRs and validate the hosted run before accepting a new baseline.
+`Pstack required` requires exactly the preparation, portable, helpers, and native groups, rejects every unsuccessful result, and revalidates the prepared matrix against the complete checked-in baseline. Missing preparation output or a partial matrix cannot pass. After this workflow lands and passes, configure the repository's branch protection or ruleset to require `Pstack required`. The workflow alone does not enforce merge protection. Update action and host pins in reviewed PRs and validate the hosted run before accepting a new baseline.
