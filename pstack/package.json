@@ -14,6 +14,7 @@
     "test:repeat": "node scripts/test.mjs --repeat 2",
     "pstack:install": "node scripts/install.mjs",
     "pstack:uninstall": "node scripts/uninstall.mjs",
-    "pstack:doctor": "node scripts/doctor.mjs"
+    "pstack:doctor": "node scripts/doctor.mjs",
+    "pstack:release-candidate": "node scripts/release-candidate.mjs"
   }
 }
