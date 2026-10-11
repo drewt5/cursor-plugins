@@ -31,14 +31,16 @@ export function persistJournal(root, journal) {
   // Acquire ownership separately: an existing temporary belongs to somebody
   // else, and a failed write may leave only a prefix of our journal bytes.
   const bytes = Buffer.from(JSON.stringify(journal, null, 2) + '\n');
-  const fd = openSync(temporary, 'wx', 0o600), owned = fstatSync(fd);
+  const fd = openSync(temporary, 'wx', 0o600);
+  let owned;
   try {
+    owned = fstatSync(fd);
     writeFileSync(fd, bytes);
     renameSync(temporary, path);
   } catch (error) {
     try {
       const current = lstatSync(temporary);
-      if (current.isFile() && current.dev === owned.dev && current.ino === owned.ino) {
+      if (owned && current.isFile() && current.dev === owned.dev && current.ino === owned.ino) {
         const partial = readFileSync(temporary);
         if (partial.length <= bytes.length && bytes.subarray(0, partial.length).equals(partial)) rmSync(temporary);
       }
@@ -204,6 +206,36 @@ export function inspectInterruptedOperation(root) {
     return journal ? { status: ['committed', 'restored'].includes(journal.state) ? 'cleanup-pending' : 'recovery-required', id: journal.id, state: journal.state, progress: journal.progress, command: recoveryCommand(root, journal) } : { status: 'absent' };
   } catch (error) { return { status: 'invalid', error: error.message }; }
 }
+// A killed writer can leave a complete next journal beside the last committed
+// journal. Only discard that exact transaction's legal next record under lock.
+export function cleanPendingJournal(root, journal) {
+  const path = safePath(root, `${journalName}.${journal.id}.tmp`), stat = present(path);
+  if (!stat) return;
+  const preserve = `Unrecognized journal temporary; preserve ${path}, move it aside, then retry: ${journal.recoveryInstruction}`;
+  assert.ok(stat.isFile() && stat.size <= 8 * 1024 * 1024, preserve);
+  let pending;
+  try { pending = JSON.parse(readFileSync(path, 'utf8')); }
+  catch { throw new Error(preserve); }
+  assert.ok(pending && typeof pending === 'object' && !Array.isArray(pending), preserve);
+  const { state, progress, failure, ...identity } = pending;
+  const { state: previousState, progress: previousProgress, failure: previousFailure, ...previousIdentity } = journal;
+  assert.ok(isDeepStrictEqual(identity, previousIdentity), preserve);
+  const count = journal.operations.length;
+  const restoring = state === 'restoring' && ['prepared', 'applying', 'verifying', 'restoring'].includes(previousState) && progress === previousProgress;
+  const advancing = previousState === 'applying' && state === 'applying' && progress === previousProgress + 1 && progress <= count;
+  const starting = previousState === 'prepared' && state === 'applying' && progress === 0 && previousProgress === 0;
+  const verifying = previousState === 'applying' && state === 'verifying' && progress === count && previousProgress === count;
+  const diagnosing = previousState === 'verifying' && state === 'verifying' && progress === count && previousProgress === count;
+  const committing = previousState === 'verifying' && state === 'committed' && progress === count && previousProgress === count;
+  const restored = previousState === 'restoring' && state === 'restored' && progress === previousProgress;
+  assert.ok(restoring || advancing || starting || verifying || diagnosing || committing || restored, preserve);
+  const diagnosticFailure = diagnosing && failure && (
+    failure.code === 'DIAGNOSTIC_EXECUTION_FAILED' && typeof failure.error === 'string' && Object.keys(failure).every(key => ['code', 'error'].includes(key)) ||
+    failure.code === 'POST_ACTIVATION_FAILED' && Array.isArray(failure.findings) && failure.discovery && typeof failure.discovery === 'object' && !Array.isArray(failure.discovery) && Object.keys(failure).every(key => ['code', 'findings', 'discovery'].includes(key))
+  );
+  assert.ok(isDeepStrictEqual(failure, previousFailure) || diagnosticFailure, preserve);
+  rmSync(path);
+}
 export function cleanupJournalMetadata(root, journal) {
   cleanOperationTemporaries(journal);
   for (const op of journal.operations.filter(item => item.kind === 'legacy-directory')) {
@@ -216,11 +248,7 @@ export function cleanupJournalMetadata(root, journal) {
   if (present(instruction)) {
     assert.ok(present(instruction).isFile() && readFileSync(instruction, 'utf8') === command, `Recovery instruction changed; preserve ${instruction}`);
   }
-  const temporary = safePath(root, `${journalName}.${journal.id}.tmp`);
-  if (present(temporary)) {
-    const pending = JSON.parse(readFileSync(temporary, 'utf8'));
-    assert.equal(pending.id, journal.id, 'Journal temporary ownership changed'); rmSync(temporary);
-  }
+  cleanPendingJournal(root, journal);
   if (present(safePath(root, journalName))) {
     assert.ok(['committed', 'restored'].includes(journal.state), 'Journal must be resolved before cleanup');
     renameSync(safePath(root, journalName), safePath(root, completedJournalName));

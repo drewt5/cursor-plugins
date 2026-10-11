@@ -12,7 +12,7 @@ import { once } from 'node:events';
 import { copyActivationSource, compactActivation, serializablePrepared } from './fixtures/activation-fixtures.mjs';
 import { prepareStagedActivation, applyStagedActivation, runStagedInstallation } from '../scripts/lib/installation-activation.mjs';
 import { recoverInstallation, recoverDemonstrablyDeadLocks } from '../scripts/lib/installation-recovery.mjs';
-import { readActivationJournal, recoveryCommand, journalName, instructionName, persistJournal } from '../scripts/lib/activation-journal.mjs';
+import { readActivationJournal, recoveryCommand, journalName, instructionName, persistJournal, cleanPendingJournal } from '../scripts/lib/activation-journal.mjs';
 import { inspectInstallationLock, withInstallationMutation } from '../scripts/lib/installation-lock.mjs';
 import { canonicalPath, observe, stateFrom } from '../scripts/lib/installation-state.mjs';
 import { verifyGeneration } from '../scripts/lib/installation-storage.mjs';
@@ -39,8 +39,8 @@ function activeSnapshot(root) {
   })();
   return ['.cursor', '.agents', '.claude', '.opencode', '.pstack/package', '.pstack/install.json', '.pstack/models.json'].flatMap(name => walk(join(root, name)));
 }
-async function killAt(t, prepared, target, executableSource = source, env = process.env) {
-  const child = fork(join(executableSource, 'tests/fixtures/activation-child.mjs'), [], { env, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+async function killAt(t, prepared, target, executableSource = source, env = process.env, childName = 'activation-child.mjs') {
+  const child = fork(join(executableSource, 'tests/fixtures', childName), [], { env, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
   let stdout = '', stderr = '', killed = false; child.stdout.on('data', bytes => stdout += bytes); child.stderr.on('data', bytes => stderr += bytes);
   child.on('message', message => { if (message.boundary === target) { killed = true; child.kill('SIGKILL'); } else if (message.boundary) child.send('continue'); });
@@ -234,11 +234,10 @@ for (const fault of ['journal-write', 'journal-rename', 'activation-rename', 're
     assert.ok(fired, 'The actual I/O boundary must execute');
     assert.equal(readFileSync(join(f.root, '.cursor/agents/user.md'), 'utf8'), 'unowned user bytes');
     const journal = readActivationJournal(f.root);
-    if (journal) {
-      const command = recoveryCommand(f.root, journal);
-      if (existsSync(join(f.root, instructionName))) assert.equal(readFileSync(join(f.root, instructionName), 'utf8'), command + '\n');
-      assert.equal(executeRecovery(f, command).status, 'restored-prior');
-    }
+    assert.ok(journal, 'A recoverable journal must survive the injected failure');
+    const command = recoveryCommand(f.root, journal);
+    assert.equal(readFileSync(join(f.root, instructionName), 'utf8'), command + '\n');
+    assert.equal(executeRecovery(f, command).status, 'restored-prior');
     assert.deepEqual(activeSnapshot(f.root), before);
     assert.equal((await recoverInstallation(f.root)).status, 'no-operation');
     // A fresh attempt must not inherit a poisoned journal temporary.
@@ -265,3 +264,79 @@ for (const change of ['preexisting', 'replacement', 'edited']) {
     assert.equal(existsSync(join(f.root, journalName)), false);
   });
 }
+
+test('retained recovery handles SIGKILL between journal write and rename after source deletion', { timeout: 20000 }, async t => {
+  const f = fixture(t, true), p = compactActivation({ source: f.selectedSource, ...f }), before = activeSnapshot(f.root);
+  const retained = verifyGeneration(f.root, p.generation);
+  rmSync(f.selectedSource, { recursive: true });
+  await killAt(t, p, 'journal-written-before-rename', retained, f.env, 'journal-interruption-child.mjs');
+  const journal = readActivationJournal(f.root), command = recoveryCommand(f.root, journal);
+  const temporary = join(f.root, `${journalName}.${journal.id}.tmp`);
+  assert.equal(journal.state, 'prepared');
+  assert.equal(JSON.parse(readFileSync(temporary)).state, 'applying');
+  assert.equal(readFileSync(join(f.root, instructionName), 'utf8'), command + '\n');
+  assert.equal(executeRecovery(f, command).status, 'restored-prior');
+  assert.deepEqual(activeSnapshot(f.root), before);
+  assert.equal(existsSync(temporary), false);
+  assert.equal(executeRecovery(f, command).status, 'no-operation');
+});
+for (const variant of ['partial', 'changed-identity', 'illegal-transition']) {
+  test(`recovery preserves ${variant} journal temporary until manually moved aside`, async t => {
+    const f = fixture(t), p = compactActivation({ source: compactSource, ...f });
+    await assert.rejects(applyStagedActivation(p, { boundary: name => { if (name === 'prepared') throw new Error('interrupted'); } }), /interrupted/);
+    const journal = readActivationJournal(f.root), command = recoveryCommand(f.root, journal);
+    const temporary = join(f.root, `${journalName}.${journal.id}.tmp`);
+    const bytes = variant === 'partial' ? '{"id":' : JSON.stringify({ ...journal, state: variant === 'illegal-transition' ? 'committed' : 'applying', ...(variant === 'changed-identity' ? { extra: 'unowned' } : {}) });
+    writeFileSync(temporary, bytes);
+    await assert.rejects(recoverInstallation(f.root), error => error.message.includes('move it aside') && error.message.includes(command));
+    assert.equal(readFileSync(temporary, 'utf8'), bytes);
+    fs.renameSync(temporary, join(f.base, 'preserved-temporary'));
+    assert.equal(executeRecovery(f, command).status, 'restored-prior');
+    assert.equal(readFileSync(join(f.base, 'preserved-temporary'), 'utf8'), bytes);
+  });
+}
+
+test('pending journal classifier accepts only the actual next writes and preserves unsafe paths', async t => {
+  const f = fixture(t), p = compactActivation({ source: compactSource, ...f });
+  await assert.rejects(applyStagedActivation(p, { boundary: name => { if (name === 'prepared') throw new Error('interrupted'); } }), /interrupted/);
+  const validated = readActivationJournal(f.root), count = validated.operations.length;
+  const temporary = join(f.root, `${journalName}.${validated.id}.tmp`);
+  const legal = [
+    ['prepared', 0, 'applying', 0],
+    ['applying', 0, 'applying', 1],
+    ['applying', count, 'verifying', count],
+    ['verifying', count, 'verifying', count, { code: 'DIAGNOSTIC_EXECUTION_FAILED', error: 'probe failed' }],
+    ['verifying', count, 'verifying', count, { code: 'POST_ACTIVATION_FAILED', findings: [], discovery: { status: 'unavailable' } }],
+    ['verifying', count, 'committed', count],
+    ['prepared', 0, 'restoring', 0],
+    ['applying', 1, 'restoring', 1],
+    ['verifying', count, 'restoring', count],
+    ['restoring', 1, 'restoring', 1],
+    ['restoring', 1, 'restored', 1]
+  ];
+  for (const [state, progress, nextState, nextProgress, failure] of legal) {
+    const live = { ...validated, state, progress };
+    writeFileSync(temporary, JSON.stringify({ ...live, state: nextState, progress: nextProgress, ...(failure ? { failure } : {}) }));
+    cleanPendingJournal(f.root, live);
+    assert.equal(existsSync(temporary), false, `${state}:${progress} -> ${nextState}:${nextProgress}`);
+  }
+  const live = { ...validated, state: 'applying', progress: 1 };
+  for (const change of [
+    { progress: 3 }, { progress: -1 }, { progress: count + 1 },
+    { state: 'committed', progress: count }, { extra: 'unknown identity field' },
+    { failure: { code: 'UNRECOGNIZED' } },
+    { state: 'restoring', progress: 1, failure: { code: 'DIAGNOSTIC_EXECUTION_FAILED', error: 'not a diagnostic transition' } }
+  ]) {
+    const bytes = JSON.stringify({ ...live, ...change });
+    writeFileSync(temporary, bytes);
+    assert.throws(() => cleanPendingJournal(f.root, live), /preserve.*move it aside/s);
+    assert.equal(readFileSync(temporary, 'utf8'), bytes);
+    rmSync(temporary);
+  }
+  const userFile = join(f.base, 'user-journal');
+  writeFileSync(userFile, 'user bytes');
+  fs.symlinkSync(userFile, temporary);
+  assert.throws(() => cleanPendingJournal(f.root, validated), /preserve.*move it aside/s);
+  assert.equal(lstatSync(temporary).isSymbolicLink(), true);
+  assert.equal(readFileSync(userFile, 'utf8'), 'user bytes');
+});
