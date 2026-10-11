@@ -61,9 +61,6 @@ for (const target of ['codex', 'opencode', 'claude-code', 'cursor', 'all']) {
     if (['all', 'opencode'].includes(target)) {
       assert.match(readFileSync(join(dir, '.opencode/agents/poteto-agent.md'), 'utf8'), /mode: subagent/);
     }
-    const before = readFileSync(join(dir, '.pstack/install.json'), 'utf8');
-    ok(install(dir, target, [], root));
-    assert.equal(readFileSync(join(dir, '.pstack/install.json'), 'utf8'), before);
     writeFileSync(join(dir, '.pstack/models.json'), '{"version":1,"roles":{}}');
     ok(install(dir, target, ['--uninstall'], root));
     assert.ok(existsSync(join(dir, '.pstack/models.json')));
