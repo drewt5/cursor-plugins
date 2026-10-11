@@ -1,3 +1,4 @@
+import { withHostVersionFixtures } from './fixtures/host-versions.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -74,4 +75,22 @@ test('native version probe checks default baseline and explicit candidate before
   assert.throws(() => observeHost('codex', { PATH: directory }), /version mismatch/);
   writeFileSync(command, '#!/bin/sh\nprintf "codex-cli 1.2.3-preview.1\\n"\n');
   assert.throws(() => observeHost('codex', env), /version mismatch/);
+});
+
+test('version-only fixture executables work without PATH and reject unsupported commands', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'pstack-version-fixtures-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  withHostVersionFixtures(directory, { PATH: '' });
+  for (const row of loadHosts()) {
+    const executable = join(directory, 'fixture-bin', row.executable);
+    const version = spawnSync(executable, ['--version'], { env: { PATH: '' }, encoding: 'utf8' });
+    assert.equal(version.status, 0, version.stderr);
+    assert.equal(version.stdout, row.version + '\n');
+    assert.equal(version.stderr, '');
+    for (const args of [[], ['unsupported']]) {
+      const refused = spawnSync(executable, args, { env: { PATH: '' }, encoding: 'utf8' });
+      assert.equal(refused.status, 99, refused.stderr);
+      assert.equal(refused.stdout, '');
+    }
+  }
 });

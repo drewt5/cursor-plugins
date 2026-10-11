@@ -1,6 +1,6 @@
 # Portable fixture workload
 
-Issue #64 reduces test fixture work. Production installation, verification, recovery, native probes, timeouts and required lanes are unchanged. A separate measured scheduling experiment uses all available CPU slots; its results are described below. All 224 tests and their existing behavioral assertions remain.
+Issue #64 reduces test fixture work. Production installation, verification, recovery, native probes, timeouts and required lanes are unchanged. A measured scheduling experiment was rejected; the existing concurrency policy remains. All 224 existing tests and their behavioral assertions remain; a new fixture-execution regression brings the suite to 225 tests.
 
 `tests/fixtures/runtime-source.mjs` copies real shipped installer, renderer and recovery scripts; runtime/model code; how/why skills; both agents; metadata; README; and the poteto skill, feature playbook and executable audit script used by scenario assertions. It excludes unrelated catalog entries, assets, tests and documentation. These scenario fixtures are not release packages and do not establish complete catalog coverage.
 
@@ -56,6 +56,12 @@ Full package anchors and real process startup still cost time. Source hashing an
 
 ## Hosted scheduling experiment
 
-The fixture-only head `d47689b6d9ca3022103f566f786350a659ac00e0` passed all eight required checks in run38102549371, attempt1. All224 tests passed on both platforms and all six artifacts matched the source, tested checkout, run and attempt. Portable phases took55.954s macOS and40.528s Linux. Mac file intervals totaled110.191s at concurrency2, almost exactly the55.096s work-packing lower bound. Linux totaled114.217s at concurrency3 versus40.528s elapsed. Reordering alone cannot deliver the desired reduction.
+The fixture-only head `d47689b6d9ca3022103f566f786350a659ac00e0` passed all eight required checks in run 38102549371, attempt 1. All 224 tests passed on both platforms and all six artifacts matched the source, tested checkout, run and attempt. Portable phases took 55.954 seconds on macOS and 40.528 seconds on Linux. Mac file intervals totaled 110.191 seconds at concurrency 2, almost exactly the 55.096-second work-packing lower bound. Linux totaled 114.217 seconds at concurrency 3 versus 40.528 seconds elapsed. Reordering alone cannot deliver the desired reduction.
 
-The next experiment leaves those fixtures and all assertions in place and changes only the selected file concurrency from `max(availableParallelism - 1, 1)` to `max(availableParallelism, 1)`: three files on the current macOS runner and four on Linux. It keeps the same runners, entrypoints, timeouts and required checks. Current-head hosted evidence determines whether to retain the change; this is not an assumption that additional workers always improve throughput.
+A controlled experiment changed only file concurrency to `max(availableParallelism, 1)`, selecting three macOS and four Linux files with the same fixtures, runners and timeouts. Run 38102747039 passed all checks at head `9aa126cf98e32b708669a5d702a797cca4c0a495`, but phases took 74.722 seconds on macOS and 40.890 seconds on Linux. Mac file intervals grew to 219.973 seconds and Linux to 136.260 seconds. The experiment provided no benefit on either platform and was reverted. There is no concurrency increase in the final implementation.
+
+## Version-only fixture startup
+
+The existing unit-only fake providers launched Node merely to compare the first argument and print a constant version. On POSIX, they now use `/bin/sh` with builtin argument comparison and `printf`. Every production version probe still launches an executable, reads stdout and validates the version; non-version commands still exit 99. The existing Node implementation remains on Windows. Real native-provider lanes and their versions are unchanged.
+
+The added test executes every fixture with an empty PATH, checks exact version/newline output and confirms both absent and unsupported arguments produce exit 99 without stdout. This removes one Node runtime startup per fake version probe without removing any probe or weakening preflight.
