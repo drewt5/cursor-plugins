@@ -90,3 +90,34 @@ test('activation can lock both old and new external roots, preventing another sc
   });
   for (const root of [oldRoot, newRoot]) assert.equal(inspectInstallationLock(join(root, '.pstack-mutation.lock')).status, 'absent');
 });
+
+test('cleanup failure after commit preserves the successful installation and original error until recovery retries', async t => {
+  const f = compact(t);
+  const instruction = join(f.root, '.pstack/recovery.txt');
+  let committedReceipt, recoveryInstruction;
+  const result = await applyStagedActivation(f.prepared, {
+    boundary: (name, journal) => {
+      if (name === 'cleanup') {
+        committedReceipt = readFileSync(join(f.root, '.pstack/install.json'));
+        recoveryInstruction = journal.recoveryInstruction;
+        writeFileSync(instruction, 'user changed recovery instructions');
+      }
+    }
+  });
+  assert.equal(result.status, 'applied');
+  assert.equal(result.changed, true);
+  assert.equal(result.cleanupPending, true);
+  assert.equal(result.cleanupError, `Recovery instruction changed; preserve ${instruction}`);
+  assert.deepEqual(readFileSync(join(f.root, '.pstack/install.json')), committedReceipt);
+  assert.equal(readFileSync(join(f.root, '.cursor/agents/replace.md'), 'utf8'), 'new');
+  assert.equal(readFileSync(instruction, 'utf8'), 'user changed recovery instructions');
+  assert.equal(JSON.parse(readFileSync(join(f.root, '.pstack/activation-completed.json'))).state, 'committed');
+  const { recoverInstallation } = await import('../scripts/lib/installation-recovery.mjs');
+  writeFileSync(instruction, recoveryInstruction + '\n');
+  const recovered = await recoverInstallation(f.root);
+  assert.equal(recovered.status, 'committed-cleanup');
+  assert.equal(recovered.restored, false);
+  assert.equal(existsSync(instruction), false);
+  assert.equal(existsSync(join(f.root, '.pstack/activation-completed.json')), false);
+  assert.deepEqual(readFileSync(join(f.root, '.pstack/install.json')), committedReceipt);
+});

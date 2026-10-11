@@ -61,57 +61,122 @@ function validImage(op, which) {
 }
 export function readActivationJournal(root) {
   root = canonicalPath(root);
-  assert.ok(!(present(safePath(root, journalName)) && present(safePath(root, completedJournalName))), 'Two unresolved journal paths; preserve both');
-  const path = safePath(root, present(safePath(root, journalName)) ? journalName : completedJournalName), stat = present(path);
-  if (!stat) return null;
+  assert.ok(
+    !(present(safePath(root, journalName)) && present(safePath(root, completedJournalName))),
+    'Two unresolved journal paths; preserve both'
+  );
+  const path = safePath(root, present(safePath(root, journalName)) ? journalName : completedJournalName);
+  const stat = present(path);
+  if (!stat) {
+    return null;
+  }
   assert.ok(stat.isFile() && stat.size <= 8 * 1024 * 1024, 'Activation journal must be a bounded regular file');
   const journal = JSON.parse(readFileSync(path, 'utf8'));
-  assert.equal(journal.schemaVersion, 1); assert.equal(journal.kind, 'pstack-activation'); assert.match(journal.id, /^[a-f0-9-]{36}$/); assert.equal(journal.root, root, 'Interrupted scope moved; restore its original scope location before recovery');
+  assert.equal(journal.schemaVersion, 1);
+  assert.equal(journal.kind, 'pstack-activation');
+  assert.match(journal.id, /^[a-f0-9-]{36}$/);
+  assert.equal(journal.root, root, 'Interrupted scope moved; restore its original scope location before recovery');
   assert.ok(['prepared', 'applying', 'verifying', 'restoring', 'restored', 'committed'].includes(journal.state));
-  const prior = parseInstallationState(JSON.stringify(journal.priorReceipt)), intended = parseInstallationState(JSON.stringify(journal.intendedReceipt));
+  const prior = parseInstallationState(JSON.stringify(journal.priorReceipt));
+  const intended = parseInstallationState(JSON.stringify(journal.intendedReceipt));
   // Deduplicate identical descriptors only within this synchronous parse. Every
   // new diagnostic/recovery/activation call revalidates current stored bytes.
   const verified = new Map();
-  const verify = generation => { validateGeneration(generation); const key = JSON.stringify(generation); if (!verified.has(key)) verified.set(key, verifyGeneration(root, generation)); return verified.get(key); };
+  const verify = generation => {
+    validateGeneration(generation);
+    const key = JSON.stringify(generation);
+    if (!verified.has(key)) {
+      verified.set(key, verifyGeneration(root, generation));
+    }
+    return verified.get(key);
+  };
   verify(journal.generation);
-  if (journal.recoveryGeneration) verify(journal.recoveryGeneration);
-  if (journal.legacyGeneration) verify(journal.legacyGeneration);
-  if (prior.version === 4) verify(prior.generation);
+  if (journal.recoveryGeneration) {
+    verify(journal.recoveryGeneration);
+  }
+  if (journal.legacyGeneration) {
+    verify(journal.legacyGeneration);
+  }
+  if (prior.version === 4) {
+    verify(prior.generation);
+  }
   assert.ok(Array.isArray(journal.operations) && journal.operations.length && journal.operations.length <= 10000);
   assert.ok(Number.isSafeInteger(journal.progress) && journal.progress >= 0 && journal.progress <= journal.operations.length);
   const paths = new Set();
   for (const op of journal.operations) {
     if (op.kind === 'legacy-directory') {
-      assert.ok(Object.keys(op).every(key => ['kind','name','path','backupName','treeDigest','treeRows','before','after'].includes(key)));
-      assert.equal(op.name, '.pstack/package'); assert.equal(op.path, safePath(root, op.name)); assert.equal(op.backupName, `.pstack/legacy-${journal.id}`);
-      assert.equal(op.before.kind, 'directory'); assert.equal(op.after.kind, 'absent'); assert.ok(prior.version < 4 && journal.legacyGeneration);
-      assert.match(op.treeDigest, /^[a-f0-9]{64}$/); assert.ok(Array.isArray(op.treeRows)); assert.equal(digest(JSON.stringify(op.treeRows)), op.treeDigest);
-      assert.ok(!paths.has(op.path), 'Duplicated legacy move'); paths.add(op.path); continue;
+      assert.ok(
+        Object.keys(op).every(key => ['kind', 'name', 'path', 'backupName', 'treeDigest', 'treeRows', 'before', 'after'].includes(key))
+      );
+      assert.equal(op.name, '.pstack/package');
+      assert.equal(op.path, safePath(root, op.name));
+      assert.equal(op.backupName, `.pstack/legacy-${journal.id}`);
+      assert.equal(op.before.kind, 'directory');
+      assert.equal(op.after.kind, 'absent');
+      assert.ok(prior.version < 4 && journal.legacyGeneration);
+      assert.match(op.treeDigest, /^[a-f0-9]{64}$/);
+      assert.ok(Array.isArray(op.treeRows));
+      assert.equal(digest(JSON.stringify(op.treeRows)), op.treeDigest);
+      assert.ok(!paths.has(op.path), 'Duplicated legacy move');
+      paths.add(op.path);
+      continue;
     }
     assert.ok(op && Object.keys(op).every(key => ['name', 'path', 'before', 'after'].includes(key)), 'Unexpected journal operation fields');
     assert.ok(op.name === '.pstack/install.json' || isManagedEntryName(op.name), 'Journal path is outside managed locations');
-    validImage(op, 'before'); validImage(op, 'after');
-    const expectedPath = op.name === '.pstack/install.json' ? safePath(root, op.name) : pathFor(root, op.name, op.after.kind === 'absent' ? prior : intended);
-    assert.equal(op.path, expectedPath, 'Journal path differs from validated receipt'); assert.ok(!paths.has(op.path) || op.name === '.pstack/package' && journal.operations[0].kind === 'legacy-directory', 'Duplicated journal path'); paths.add(op.path);
+    validImage(op, 'before');
+    validImage(op, 'after');
+    const expectedPath =
+      op.name === '.pstack/install.json' ? safePath(root, op.name) : pathFor(root, op.name, op.after.kind === 'absent' ? prior : intended);
+    assert.equal(op.path, expectedPath, 'Journal path differs from validated receipt');
+    assert.ok(
+      !paths.has(op.path) || (op.name === '.pstack/package' && journal.operations[0].kind === 'legacy-directory'),
+      'Duplicated journal path'
+    );
+    paths.add(op.path);
     if (op.name === '.pstack/install.json') {
-      if (op.before.kind === 'file') assert.deepEqual(parseInstallationState(Buffer.from(op.before.data, 'base64')), prior, 'Prior receipt image mismatch'); else assert.ok(!prior.targets.length && op.before.kind === 'absent');
-      if (intended.targets.length) { assert.equal(op.after.kind, 'file'); assert.deepEqual(parseInstallationState(Buffer.from(op.after.data, 'base64')), intended, 'Intended receipt image mismatch'); } else assert.equal(op.after.kind, 'absent');
+      if (op.before.kind === 'file') {
+        assert.deepEqual(parseInstallationState(Buffer.from(op.before.data, 'base64')), prior, 'Prior receipt image mismatch');
+      } else {
+        assert.ok(!prior.targets.length && op.before.kind === 'absent');
+      }
+      if (intended.targets.length) {
+        assert.equal(op.after.kind, 'file');
+        assert.deepEqual(parseInstallationState(Buffer.from(op.after.data, 'base64')), intended, 'Intended receipt image mismatch');
+      } else {
+        assert.equal(op.after.kind, 'absent');
+      }
     } else {
-      const old = entryAt(root, prior, op.name, op.path), next = entryAt(root, intended, op.name, op.path);
-      assert.ok(op.before.kind === 'absent' || matchesObserved(op.path, op.before, { ...old, mode: undefined }), 'Journal before image is not previously owned');
+      const old = entryAt(root, prior, op.name, op.path);
+      const next = entryAt(root, intended, op.name, op.path);
+      assert.ok(
+        op.before.kind === 'absent' || matchesObserved(op.path, op.before, { ...old, mode: undefined }),
+        'Journal before image is not previously owned'
+      );
       assert.ok(matchesObserved(op.path, op.after, next), 'Journal after image differs from intended receipt');
     }
   }
-  if (journal.operations[0].kind === 'legacy-directory') assert.equal(journal.operations.filter(op => op.name === '.pstack/package').length, 2, 'Invalid legacy transition count');
+  if (journal.operations[0].kind === 'legacy-directory') {
+    assert.equal(journal.operations.filter(op => op.name === '.pstack/package').length, 2, 'Invalid legacy transition count');
+  }
   assert.equal(journal.operations.at(-1).name, '.pstack/install.json', 'Receipt transition must be last');
   assert.ok(Array.isArray(journal.createdDirectories) && new Set(journal.createdDirectories).size === journal.createdDirectories.length);
   const allowed = new Set();
   for (const op of journal.operations) {
     const boundary = op.name.startsWith('@opencode/') ? resolve(root, (op.after.kind === 'absent' ? prior : intended).opencodeRoot) : root;
-    for (let parent = dirname(op.path); parent !== boundary; parent = dirname(parent)) { assert.notEqual(parent, dirname(parent), 'Invalid parent boundary'); allowed.add(parent); }
+    for (let parent = dirname(op.path); parent !== boundary; parent = dirname(parent)) {
+      assert.notEqual(parent, dirname(parent), 'Invalid parent boundary');
+      allowed.add(parent);
+    }
   }
-  assert.ok(journal.createdDirectories.every(path => allowed.has(path)), 'Journal directory is outside operation parents');
-  assert.equal(journal.recoveryInstruction, commandAt(root, verify(journal.recoveryGeneration ?? journal.generation)), 'Recovery instruction differs from validated retained identity');
+  assert.ok(
+    journal.createdDirectories.every(path => allowed.has(path)),
+    'Journal directory is outside operation parents'
+  );
+  assert.equal(
+    journal.recoveryInstruction,
+    commandAt(root, verify(journal.recoveryGeneration ?? journal.generation)),
+    'Recovery instruction differs from validated retained identity'
+  );
   return journal;
 }
 export function inspectInterruptedOperation(root) {

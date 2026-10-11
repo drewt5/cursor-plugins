@@ -48,15 +48,48 @@ export async function previewInstallation(raw) {
   return { ...prepared, generation };
 }
 export async function applyPublicInstallation(raw, controls = {}) {
-  const root = canonicalPath(raw.root), recovered = readActivationJournal(root) || raw.options['recover-dead-locks'] ? await recoverInstallation(root, { recoverDeadLocks: !!raw.options['recover-dead-locks'], env: raw.env }) : null;
-  const options = publicOptions({ ...raw, root }), prepared = await previewInstallation(options);
-  if (!prepared.plan || prepared.plan.conflicts.length || prepared.failures.length || prepared.discoveryFailures.length) return { status: 'preflight-failed', changed: false, prepared, recovered };
-  const previous = stateFrom(safePath(root, '.pstack/install.json'));
-  if (options.options.uninstall && previous.version === 4) return { ...await removeInstallation({ root, targets: prepared.selected }, controls), prepared, recovered };
-  if (options.options.uninstall && !previous.targets.length) {
-    if (!present(safePath(root, '.pstack/releases'))) return { status: 'unchanged', changed: false, prepared, recovered, report: prepared.report };
-    const cleanup = await withInstallationMutation({ root }, () => cleanupReleases(root)); removeEmptyStorage(root); return { status: 'unchanged', changed: false, prepared, recovered, cleanup, report: prepared.report };
+  const root = canonicalPath(raw.root);
+  let recovered = null;
+  if (readActivationJournal(root) || raw.options['recover-dead-locks']) {
+    recovered = await recoverInstallation(root, { recoverDeadLocks: !!raw.options['recover-dead-locks'], env: raw.env });
   }
-  const selectedOptions = { ...options, options: { ...options.options, ...(options.options.target === undefined && !previous.targets.length && prepared.selected.length === 1 ? { target: prepared.selected[0] } : {}) } };
-  let result; try { result = await runStagedInstallation(selectedOptions, controls); } catch (error) { if (/Installation busy/.test(error.message)) error.message += `\nRecovery: node ${quote(join(options.source, 'scripts/recover.mjs'))} --project ${quote(root)} --recover-dead-locks (only demonstrably dead owners are removed)`; throw error; } if (result.status === 'applied' && !result.prepared.targets.length && !result.cleanupPending) removeEmptyStorage(root); return { ...result, report: result.report ?? result.prepared?.report ?? prepared.report, recovered };
+  const options = publicOptions({ ...raw, root });
+  const prepared = await previewInstallation(options);
+  if (!prepared.plan || prepared.plan.conflicts.length || prepared.failures.length || prepared.discoveryFailures.length) {
+    return { status: 'preflight-failed', changed: false, prepared, recovered };
+  }
+  const previous = stateFrom(safePath(root, '.pstack/install.json'));
+  if (options.options.uninstall && previous.version === 4) {
+    return { ...(await removeInstallation({ root, targets: prepared.selected }, controls)), prepared, recovered };
+  }
+  if (options.options.uninstall && !previous.targets.length) {
+    if (!present(safePath(root, '.pstack/releases'))) {
+      return { status: 'unchanged', changed: false, prepared, recovered, report: prepared.report };
+    }
+    const cleanup = await withInstallationMutation({ root }, () => cleanupReleases(root));
+    removeEmptyStorage(root);
+    return { status: 'unchanged', changed: false, prepared, recovered, cleanup, report: prepared.report };
+  }
+  const selectedOptions = {
+    ...options,
+    options: {
+      ...options.options,
+      ...(options.options.target === undefined && !previous.targets.length && prepared.selected.length === 1
+        ? { target: prepared.selected[0] }
+        : {})
+    }
+  };
+  let result;
+  try {
+    result = await runStagedInstallation(selectedOptions, controls);
+  } catch (error) {
+    if (/Installation busy/.test(error.message)) {
+      error.message += `\nRecovery: node ${quote(join(options.source, 'scripts/recover.mjs'))} --project ${quote(root)} --recover-dead-locks (only demonstrably dead owners are removed)`;
+    }
+    throw error;
+  }
+  if (result.status === 'applied' && !result.prepared.targets.length && !result.cleanupPending) {
+    removeEmptyStorage(root);
+  }
+  return { ...result, report: result.report ?? result.prepared?.report ?? prepared.report, recovered };
 }
