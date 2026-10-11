@@ -25,8 +25,8 @@ export function assertScopeObservation({ host, scenario, result, expected, bundl
     wanted = canonical.flatMap(bundle => expected.map(name => entry(name, bundle)));
     classification = 'ambiguous-sources'; completeBundles = canonical; coherentBundle = null;
   } else if (scenario === 'both-scopes' && host === 'opencode') {
-    // Pinned OpenCode scans can select either project-only or mixed origins.
-    // All-global resolution has not been observed in this fixture baseline.
+    // Both scopes are unsupported. Check catalog consistency without assuming
+    // precedence: each identity must come from one of its two exact paths.
     wanted = expected.map(name => {
       const matches = result.entries.filter(item => item.name === name);
       assert.equal(matches.length, 1, `${label}: exactly one ${name}`);
@@ -34,8 +34,8 @@ export function assertScopeObservation({ host, scenario, result, expected, bundl
       return matches[0];
     });
     const projectCount = wanted.filter(item => item.origin === entry(item.name, canonical[0]).origin).length;
-    assert.ok(projectCount > 0, `${label}: unobserved all-global resolution`);
-    if (projectCount !== expected.length) { classification = 'ambiguous-sources'; completeBundles = []; coherentBundle = null; }
+    if (projectCount === 0) { completeBundles = [canonical[1]]; coherentBundle = canonical[1]; }
+    else if (projectCount !== expected.length) { classification = 'ambiguous-sources'; completeBundles = []; coherentBundle = null; }
   }
   if (scenario === 'independent-same-name' && host === 'codex') {
     wanted.push({ name: 'poteto-mode', origin: realpathSync(independent) });

@@ -66,12 +66,14 @@ test('pinned scope assertions reject changed native classification and origins',
   assert.throws(() => check({ ...result, entries: result.entries.slice(1) }));
 });
 
-test('OpenCode both-scope assertions accept observed project and mixed catalogs, reject corrupt evidence', t => {
+test('OpenCode both-scope assertions accept coherent or mixed catalogs, reject corrupt evidence', t => {
   const f = fixture(t), bare = f.entries.map(entries => entries.map(entry => ({ ...entry, name: entry.name.replace('pstack:', '') })));
   const observation = entries => ({ status: 'observed', ...classifyScopeCatalog(entries, f.expected, f.bundles) });
   const check = result => assertScopeObservation({ host: 'opencode', scenario: 'both-scopes', result, expected: f.expected, bundles: f.bundles });
   const project = observation(bare[0]), mixed = observation([bare[0][0], bare[1][1]]);
   check(project); check(mixed);
+  // A coherent global result is structurally valid; sampled runs do not establish precedence.
+  check(observation(bare[1]));
   for (const result of [
     { ...project, classification: 'ambiguous-sources' },
     { ...mixed, classification: 'identified-source' },
@@ -84,7 +86,7 @@ test('OpenCode both-scope assertions accept observed project and mixed catalogs,
     { ...project, missing: ['one'] },
     { ...project, unexpected: ['other'] },
     { ...project, independentIdentities: ['one'] },
-    observation(bare[1]),
+    { ...observation(bare[1]), coherentBundle: project.coherentBundle },
   ]) assert.throws(() => check(result));
 });
 test('independent-name assertions prove exact project origins and preserve raw classification', t => {
