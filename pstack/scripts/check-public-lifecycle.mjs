@@ -30,7 +30,7 @@ try {
   command('git', ['init', '-q'], project);
   const source = join(clone, 'pstack'), { packageDigest } = await import(pathToFileURL(join(source, 'scripts/lib/package-provenance.mjs')).href), { loadHosts, observeHost } = await import(pathToFileURL(join(source, 'scripts/lib/tested-hosts.mjs')).href), { inspectNativeDiscovery } = await import(pathToFileURL(join(source, 'scripts/lib/installation-discovery.mjs')).href);
   const metadata = JSON.parse(readFileSync(join(source, 'release.json'))), expected = readdirSync(join(source, 'skills')).sort(), codex = loadHosts().find(row => row.host === 'codex');
-  observeHost('codex', env); command(process.execPath, [join(source, 'scripts/release.mjs')], clone);
+  observeHost('codex', env); command(process.execPath, [join(source, 'scripts/release.mjs'), '--check'], clone);
   const run = (script, args = [], scope = project) => command(process.execPath, [join(source, 'scripts', script + '.mjs'), ...(scope === 'global' ? ['--global'] : ['--project', scope]), ...args]);
   const thirdParty = join(project, '.agents/skills/independent-poteto'), thirdBytes = '---\nname: poteto-mode\ndescription: Independent public-clone fixture\n---\n\nIndependent user workflow.\n'; mkdirSync(thirdParty, { recursive: true }); writeFileSync(join(thirdParty, 'SKILL.md'), thirdBytes); chmodSync(join(thirdParty, 'SKILL.md'), 0o640);
   run('install', ['--target', 'codex'], 'global');
