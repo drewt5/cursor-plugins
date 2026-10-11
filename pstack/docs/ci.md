@@ -201,7 +201,7 @@ Each process limits timing output to 256 KiB and each record to 4 KiB. A timing 
 
 ## Native fixture execution
 
-`check-hosts.mjs HOST` runs independent initial-discovery, rollback, legacy-migration, and scope-contract groups in separate worker processes. Only applicable groups run for each host. Each worker owns its temporary home, configuration, project and provider state; dependent operations inside a group remain sequential. The parent verifies each selected host version once. Public installer preflight and safety probes continue to run inside their scenarios.
+`check-hosts.mjs HOST` runs independent initial-discovery, rollback, legacy-migration, and scope-contract groups in separate worker processes. Only applicable groups run for each host. Longer scope and legacy groups start first to reduce idle time near the end of the phase. Each worker owns its temporary home, configuration, project and provider state; dependent operations inside a group remain sequential. The parent verifies each selected host version once. Public installer preflight and safety probes continue to run inside their scenarios.
 
 The worker pool uses at most two workers, capped by `os.availableParallelism()`. Discovery timing streams retain the selected concurrency and each fixture group's start/end alongside individual native commands. A group interval includes setup and cleanup, so it is not an additional cost to sum with its contained commands. Parallel group intervals overlap.
 

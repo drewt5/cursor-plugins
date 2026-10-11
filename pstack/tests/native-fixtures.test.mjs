@@ -20,9 +20,9 @@ function fixture(t) {
 }
 test('native fixture selection preserves every host scenario', () => {
   assert.deepEqual(nativeFixtures('all'), [
-    ...['initial', 'legacy', 'scopes'].map(scenario => ({ host: 'codex', scenario })),
-    ...['initial', 'rollback', 'legacy', 'scopes'].map(scenario => ({ host: 'opencode', scenario })),
-    ...['initial', 'scopes'].map(scenario => ({ host: 'claude-code', scenario })),
+    ...['scopes', 'legacy', 'initial'].map(scenario => ({ host: 'codex', scenario })),
+    ...['scopes', 'legacy', 'rollback', 'initial'].map(scenario => ({ host: 'opencode', scenario })),
+    ...['scopes', 'initial'].map(scenario => ({ host: 'claude-code', scenario })),
   ]);
 });
 test('pool starts at most two workers and waits for every selected worker', async t => {

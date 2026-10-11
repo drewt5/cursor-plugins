@@ -4,7 +4,7 @@ import { startTiming, timingEvent } from './ci-timing.mjs';
 
 export function nativeFixtures(host) {
   return (host === 'all' ? ['codex', 'opencode', 'claude-code'] : [host]).flatMap(target =>
-    (target === 'opencode' ? ['initial', 'rollback', 'legacy', 'scopes'] : target === 'codex' ? ['initial', 'legacy', 'scopes'] : ['initial', 'scopes']).map(scenario => ({ host: target, scenario })));
+    (target === 'opencode' ? ['scopes', 'legacy', 'rollback', 'initial'] : target === 'codex' ? ['scopes', 'legacy', 'initial'] : ['scopes', 'initial']).map(scenario => ({ host: target, scenario })));
 }
 
 export async function runNativeFixtures(tasks, { concurrency = Math.min(2, availableParallelism()), signal, timeout = 180000 } = {}) {
