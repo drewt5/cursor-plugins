@@ -28,7 +28,7 @@ function snapshot(path, prefix = '') {
 }
 const temporary = mkdtempSync(join(tmpdir(), 'pstack-suite-'));
 const env = isolatedEnvironment(temporary);
-const concurrency = Math.max(1, runtimeTiming().availableParallelism - 1);
+const concurrency = Math.max(1, runtimeTiming().availableParallelism);
 const before = snapshot(root);
 function run(executable, args, cwd = root, extraEnv = {}) {
   const result = spawnSync(executable, args, { cwd, env: { ...env, ...extraEnv, PWD: cwd }, stdio: 'inherit', timeout: 180000 });

@@ -1,6 +1,6 @@
 # Portable fixture workload
 
-Issue #64 reduces test fixture work. Production installation, verification, recovery, native probes, CI scheduling, timeouts and required lanes are unchanged. All 224 tests and their existing behavioral assertions remain.
+Issue #64 reduces test fixture work. Production installation, verification, recovery, native probes, timeouts and required lanes are unchanged. A separate measured scheduling experiment uses all available CPU slots; its results are described below. All 224 tests and their existing behavioral assertions remain.
 
 `tests/fixtures/runtime-source.mjs` copies real shipped installer, renderer and recovery scripts; runtime/model code; how/why skills; both agents; metadata; README; and the poteto skill, feature playbook and executable audit script used by scenario assertions. It excludes unrelated catalog entries, assets, tests and documentation. These scenario fixtures are not release packages and do not establish complete catalog coverage.
 
@@ -53,3 +53,9 @@ Test-process durations were 49.489, 56.131 and 55.554 seconds before, and 32.922
 File intervals overlap and must not be summed as suite elapsed time. Local tests ran amid other agent work; grouped before/after samples, cache state and load limit causal timing claims. Deterministic fixture reductions establish the removed work. Current-head hosted reports establish platform behavior and report actual phase cost; no timing threshold is added to tests.
 
 Full package anchors and real process startup still cost time. Source hashing and verification boundaries remain production behavior rather than test bypasses. This task does not resolve the complete CI-cost tracker #52.
+
+## Hosted scheduling experiment
+
+The fixture-only head `d47689b6d9ca3022103f566f786350a659ac00e0` passed all eight required checks in run38102549371, attempt1. All224 tests passed on both platforms and all six artifacts matched the source, tested checkout, run and attempt. Portable phases took55.954s macOS and40.528s Linux. Mac file intervals totaled110.191s at concurrency2, almost exactly the55.096s work-packing lower bound. Linux totaled114.217s at concurrency3 versus40.528s elapsed. Reordering alone cannot deliver the desired reduction.
+
+The next experiment leaves those fixtures and all assertions in place and changes only the selected file concurrency from `max(availableParallelism - 1, 1)` to `max(availableParallelism, 1)`: three files on the current macOS runner and four on Linux. It keeps the same runners, entrypoints, timeouts and required checks. Current-head hosted evidence determines whether to retain the change; this is not an assumption that additional workers always improve throughput.
