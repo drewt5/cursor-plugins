@@ -21,7 +21,8 @@ import { journalName, instructionName, matchesObserved, persistJournal, applyJou
 export { journalName, matchesObserved, persistJournal, applyJournalImage, assertJournalOperation } from './activation-journal.mjs';
 export async function prepareStagedActivation(options) {
   const root = canonicalPath(options.root), generation = generationDescriptor(stagePackage({ source: options.source, root }));
-  const packageRoot = verifyGeneration(root, generation);
+  // stagePackage verifies the retained bytes before returning synchronously.
+  const packageRoot = safePath(root, generation.name);
   const { loadModelConfig } = await import(pathToFileURL(join(packageRoot, 'skills/pstack-runtime/scripts/models.mjs')).href);
   let config = options.config;
   const modelConfig = () => config ??= loadModelConfig({ project: root, home: options.globalRoot, configHome: options.env?.XDG_CONFIG_HOME, host: 'opencode' });
