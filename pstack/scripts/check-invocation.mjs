@@ -5,7 +5,7 @@ import { isolatedEnvironment } from './lib/test-environment.mjs';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -117,14 +117,23 @@ try {
     writeFileSync(join(project, 'opencode.json'), JSON.stringify({ model: 'pstack-fixture/test', provider: { 'pstack-fixture': { npm: '@ai-sdk/anthropic', name: 'Local test fixture', options: { baseURL: base + '/v1', apiKey: 'pstack-local-fixture' }, models: { test: { name: 'Local test fixture', limit: { context: 200000, output: 1000 } } } } } }));
     await run('opencode', ['--pure', 'run', '--dir', project, '--format', 'json', '--command', 'poteto-mode', 'Read-only installation smoke test.']);
     install('opencode', true);
-    console.log('OpenCode: slash command expands the actual skill and completes a local API round trip.');
+    assert.equal(existsSync(join(project, '.opencode/skills/poteto-mode/SKILL.md')), false, 'Project skill must be absent before global invocation');
+    assert.equal(existsSync(join(project, '.opencode/commands/poteto-mode.md')), false, 'Project command must be absent before global invocation');
+    install('opencode', false, 'global');
+    await run('opencode', ['--pure', 'run', '--dir', project, '--format', 'json', '--command', 'poteto-mode', 'Read-only global installation smoke test.']);
+    install('opencode', true, 'global');
+    console.log('OpenCode: project/global slash commands expand the actual skill and complete local API round trips.');
   }
   if (selected === 'all' || selected === 'codex') {
     install('codex');
     const provider = `model_providers.pstack_fixture={name="Local test fixture",base_url="${base}/v1",wire_api="responses",requires_openai_auth=false}`;
     await run('codex', ['exec', '--ignore-user-config', '--ephemeral', '--sandbox', 'read-only', '-c', 'model_provider="pstack_fixture"', '-c', provider, '-m', 'pstack-fixture', '--json', '$pstack:poteto-mode Read-only installation smoke test.']);
     install('codex', true);
-    console.log('Codex: skill invocation expands the actual skill and completes a local API round trip.');
+    assert.equal(existsSync(join(project, '.agents/skills/poteto-mode/SKILL.md')), false, 'Project skill must be absent before global invocation');
+    install('codex', false, 'global');
+    await run('codex', ['exec', '--ignore-user-config', '--ephemeral', '--sandbox', 'read-only', '-c', 'model_provider="pstack_fixture"', '-c', provider, '-m', 'pstack-fixture', '--json', '$pstack:poteto-mode Read-only global installation smoke test.']);
+    install('codex', true, 'global');
+    console.log('Codex: project/global skill invocations expand the actual skill and complete local API round trips.');
   }
 } catch (error) {
   console.error(error.message);
