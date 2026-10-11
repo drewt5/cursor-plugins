@@ -6,6 +6,7 @@ import { cpSync, mkdtempSync, readdirSync, readFileSync, lstatSync, rmSync } fro
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runtimeTiming, timingEnvironment, timingEvent } from './lib/ci-timing.mjs';
 import { isolatedEnvironment } from './lib/test-environment.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -27,9 +28,10 @@ function snapshot(path, prefix = '') {
 }
 const temporary = mkdtempSync(join(tmpdir(), 'pstack-suite-'));
 const env = isolatedEnvironment(temporary);
+const concurrency = Math.max(1, runtimeTiming().availableParallelism - 1);
 const before = snapshot(root);
-function run(executable, args, cwd = root) {
-  const result = spawnSync(executable, args, { cwd, env: { ...env, PWD: cwd }, stdio: 'inherit', timeout: 180000 });
+function run(executable, args, cwd = root, extraEnv = {}) {
+  const result = spawnSync(executable, args, { cwd, env: { ...env, ...extraEnv, PWD: cwd }, stdio: 'inherit', timeout: 180000 });
   if (result.error) throw result.error;
   assert.equal(result.status, 0, `${executable} ${args.join(' ')} failed`);
 }
@@ -44,7 +46,8 @@ try {
     console.log(`\nPstack ${mode} suite ${pass}/${repeat}`);
     if (mode !== 'helpers') {
       run(process.execPath, [join(root, 'scripts/release.mjs'), '--check']);
-      run(process.execPath, ['--test', ...readdirSync(join(root, 'tests')).filter(name => name.endsWith('.test.mjs')).sort().map(name => join(root, 'tests', name))]);
+      timingEvent({ event: 'test-runner', pass, runtime: runtimeTiming(), concurrency, timeoutMs: 180000 });
+      run(process.execPath, ['--test', `--test-concurrency=${concurrency}`, ...(process.env.PSTACK_TIMING_DIR ? ['--import', new URL('./lib/test-file-timing.mjs', import.meta.url).href] : []), ...readdirSync(join(root, 'tests')).filter(name => name.endsWith('.test.mjs')).sort().map(name => join(root, 'tests', name))], root, timingEnvironment());
       run('bash', ['-n', join(root, 'skills/poteto-mode/scripts/worktree-audit.sh')]);
     }
     if (mode !== 'unit') {

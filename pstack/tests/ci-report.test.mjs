@@ -27,6 +27,9 @@ test('report and summary preserve identity, command, version, and successful evi
   assert.equal(f.run(['finalize', 'discovery'], { PSTACK_HOST: 'codex', PSTACK_HOST_VERSION: '1.2.3' }).status, 0);
   const report = f.read('report.json');
   assert.equal(report.status, 'passed');
+  assert.equal(report.runtime.node, process.version);
+  assert.equal(report.runtime.architecture, process.arch);
+  assert.ok(report.runtime.availableParallelism >= 1);
   assert.equal(report.repository, 'owner/repo');
   assert.equal(report.pullRequest, 123);
   assert.equal(report.runId, '456');

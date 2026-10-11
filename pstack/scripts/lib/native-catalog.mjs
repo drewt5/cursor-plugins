@@ -1,11 +1,14 @@
+import { startTiming } from './ci-timing.mjs';
 import { spawn } from 'node:child_process';
 export async function codexSkills(project, isolated, { executable = 'codex', timeout = 20000, maxBytes = 4 * 1024 * 1024 } = {}) {
+  const finishTiming = startTiming('native-command', 'codex skills/list');
+  let status = 'failed', timedOut = false;
   const proc = spawn(executable, ['app-server', '--stdio'], { cwd: project, env: { ...isolated, PWD: project }, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
   const closed = new Promise(done => proc.once('close', done));
   let pending = '', errors = '', bytes = 0;
   try {
-    return await new Promise((resolveResult, reject) => {
-      const timer = setTimeout(() => reject(new Error(`Codex discovery timed out: ${errors}`)), timeout);
+    const result = await new Promise((resolveResult, reject) => {
+      const timer = setTimeout(() => { timedOut = true; reject(new Error(`Codex discovery timed out: ${errors}`)); }, timeout);
       const finish = (error, result) => { clearTimeout(timer); error ? reject(error) : resolveResult(result); };
       proc.stderr.on('data', chunk => { errors = (errors + chunk).slice(-4000); });
       proc.on('error', error => finish(error));
@@ -29,6 +32,8 @@ export async function codexSkills(project, isolated, { executable = 'codex', tim
       });
       proc.stdin.write(JSON.stringify({ id: 1, method: 'initialize', params: { clientInfo: { name: 'pstack_portability_check', version: '1.0.0' }, capabilities: { experimentalApi: true } } }) + '\n');
     });
+    status = 'passed';
+    return result;
   } finally {
     const kill = signal => {
       if (!proc.pid) return;
@@ -39,5 +44,6 @@ export async function codexSkills(project, isolated, { executable = 'codex', tim
     await closed;
     clearTimeout(force);
     kill('SIGKILL');
+    finishTiming({ status, timedOut });
   }
 }

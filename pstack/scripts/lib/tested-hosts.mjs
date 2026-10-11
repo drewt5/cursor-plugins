@@ -1,3 +1,4 @@
+import { startTiming } from './ci-timing.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -30,7 +31,9 @@ export function observeHost(host, env = process.env) {
   assert.ok(baseline, `Unknown native host: ${host}`);
   const expectedVersion = env.PSTACK_HOST_VERSION || baseline.version;
   assert.match(expectedVersion, /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/, 'Expected an exact stable host version');
+  const finishTiming = startTiming('native-command', `${host} --version`);
   const result = spawnSync(baseline.executable, ['--version'], { env, encoding: 'utf8', timeout: 15000 });
+  finishTiming({ status: !result.error && result.status === 0 ? 'passed' : 'failed', exitCode: result.status, signal: result.signal, timedOut: result.error?.code === 'ETIMEDOUT' });
   assert.ok(!result.error && result.status === 0, `${host} version probe failed: ${result.error?.message || result.stderr}`);
   const actualVersion = result.stdout.match(/\b\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\b/)?.[0];
   assert.equal(actualVersion, expectedVersion, `${host} version mismatch: expected ${expectedVersion}, observed ${actualVersion || result.stdout.trim()}`);

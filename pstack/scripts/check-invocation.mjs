@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { startTiming } from './lib/ci-timing.mjs';
 import { observeHost, loadHosts } from './lib/tested-hosts.mjs';
 import { isolatedEnvironment } from './lib/test-environment.mjs';
 import assert from 'node:assert/strict';
@@ -55,31 +56,35 @@ const server = createServer(async (request, response) => {
   } catch (error) { response.writeHead(500); response.end(JSON.stringify({ error: error.message })); }
 });
 async function run(executable, args, extraEnv = {}, expectedBody = ['## Non-negotiables', 'pstack-runtime']) {
-  requests = [];
-  const child = spawn(executable, args, { cwd: project, env: { ...env, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
-  let output = '', errors = '';
-  child.stdout.on('data', value => { output = (output + value).slice(-1024 * 1024); });
-  child.stderr.on('data', value => { errors = (errors + value).slice(-1024 * 1024); });
-  let timedOut = false;
-  const kill = signal => {
-    if (!child.pid) return;
-    try { process.platform === 'win32' ? child.kill(signal) : process.kill(-child.pid, signal); } catch (error) { if (error.code !== 'ESRCH') throw error; }
-  };
-  let force;
-  const code = await new Promise((resolveCode, reject) => {
-    const timer = setTimeout(() => {
-      timedOut = true;
-      kill('SIGTERM');
-      force = setTimeout(() => kill('SIGKILL'), 1000);
-    }, 30000);
-    child.on('error', error => { clearTimeout(timer); clearTimeout(force); reject(error); });
-    child.on('close', value => { clearTimeout(timer); clearTimeout(force); kill('SIGKILL'); resolveCode(value); });
-  });
-  assert.ok(!timedOut, `${executable} invocation timed out: ${errors.slice(-4000)}\n${output.slice(-4000)}`);
-  assert.equal(code, 0, `${executable}: ${errors}\n${output.slice(-2000)}`);
-  assert.ok(requests.length > 0, `${executable} never reached the local test API: ${output} ${errors}`);
-  assert.ok(requests.some(body => expectedBody.every(marker => JSON.stringify(body).includes(marker))), `${executable} (${args.at(-1)}) did not expand the expected skill content into the model request`);
-  assert.ok(output.includes(marker), `${executable} did not return the fixture response`);
+  const finishTiming = startTiming('native-command', `${executable} invocation`);
+  let status = 'failed', timedOut = false;
+  try {
+    requests = [];
+    const child = spawn(executable, args, { cwd: project, env: { ...env, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
+    let output = '', errors = '';
+    child.stdout.on('data', value => { output = (output + value).slice(-1024 * 1024); });
+    child.stderr.on('data', value => { errors = (errors + value).slice(-1024 * 1024); });
+    const kill = signal => {
+      if (!child.pid) return;
+      try { process.platform === 'win32' ? child.kill(signal) : process.kill(-child.pid, signal); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+    };
+    let force;
+    const code = await new Promise((resolveCode, reject) => {
+      const timer = setTimeout(() => {
+        timedOut = true;
+        kill('SIGTERM');
+        force = setTimeout(() => kill('SIGKILL'), 1000);
+      }, 30000);
+      child.on('error', error => { clearTimeout(timer); clearTimeout(force); reject(error); });
+      child.on('close', value => { clearTimeout(timer); clearTimeout(force); kill('SIGKILL'); resolveCode(value); });
+    });
+    assert.ok(!timedOut, `${executable} invocation timed out: ${errors.slice(-4000)}\n${output.slice(-4000)}`);
+    assert.equal(code, 0, `${executable}: ${errors}\n${output.slice(-2000)}`);
+    assert.ok(requests.length > 0, `${executable} never reached the local test API: ${output} ${errors}`);
+    assert.ok(requests.some(body => expectedBody.every(marker => JSON.stringify(body).includes(marker))), `${executable} (${args.at(-1)}) did not expand the expected skill content into the model request`);
+    assert.ok(output.includes(marker), `${executable} did not return the fixture response`);
+    status = 'passed';
+  } finally { finishTiming({ status, timedOut }); }
 }
 try {
   const selected = process.argv[2] || 'all';

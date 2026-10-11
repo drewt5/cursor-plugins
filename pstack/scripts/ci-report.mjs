@@ -1,8 +1,9 @@
 #!/usr/bin/env node
+import { runtimeTiming } from './lib/ci-timing.mjs';
 import { loadHosts } from './lib/tested-hosts.mjs';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -39,10 +40,14 @@ async function run() {
   const record = { schemaVersion: 1, identity: identity(), phase, command, reproduce: command.map(quote).join(' '), status: 'failed', exitCode: null, signal: null, error: null, durationMs: 0, log: `${phase}.log` };
   const log = join(directory, record.log);
   writeFileSync(log, '');
-  const started = Date.now();
+  const started = process.hrtime.bigint();
+  record.startedAt = new Date().toISOString();
+  record.timing = `${phase}-timing`;
+  rmSync(join(directory, record.timing), { recursive: true, force: true });
+  mkdirSync(join(directory, record.timing), { recursive: true });
   const token = randomUUID();
   console.log(`::stop-commands::${token}`);
-  const child = spawn(command[0], command.slice(1), { stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
+  const child = spawn(command[0], command.slice(1), { env: { ...env, PSTACK_TIMING_DIR: join(directory, record.timing), PSTACK_TIMING_ORIGIN: String(started), PSTACK_TIMING_SCOPE: phase }, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
   const logLimit = 4 * 1024 * 1024;
   let tail = Buffer.alloc(0);
   let truncated = false;
@@ -70,7 +75,7 @@ async function run() {
   kill('SIGKILL');
   writeFileSync(log, truncated ? Buffer.concat([Buffer.from('[Earlier output truncated; retaining last 4 MiB]\n'), tail]) : tail);
   console.log(`\n::${token}::`);
-  record.durationMs = Date.now() - started;
+  record.durationMs = Math.round(Number(process.hrtime.bigint() - started) / 1e6);
   record.status = record.exitCode === 0 && !record.error ? 'passed' : 'failed';
   if (record.status === 'failed' && !record.error) record.error = `Command exited ${record.exitCode ?? record.signal}`;
   save(`${phase}.json`, record);
@@ -91,6 +96,8 @@ function finalize() {
       assert.ok(Number.isFinite(record.durationMs) && record.durationMs >= 0);
       assert.equal(record.log, `${phase}.log`);
       readFileSync(join(directory, record.log));
+      assert.equal(record.timing, `${phase}-timing`);
+      readdirSync(join(directory, record.timing));
       assert.ok(record.status !== 'passed' || (record.exitCode === 0 && record.error === null));
       assert.equal(typeof record.reproduce, 'string');
       if (record.status === 'passed' && steps[phase] && steps[phase].outcome !== 'success') throw new Error(`GitHub step outcome is ${steps[phase].outcome}`);
@@ -117,9 +124,10 @@ function finalize() {
     }
     if (actualVersion !== host.expectedVersion) failures.push(`Host version mismatch: expected ${host.expectedVersion}, observed ${actualVersion}`);
   }
-  const report = { schemaVersion: 1, ...current, os: process.platform, node: process.version, host, artifact: env.PSTACK_ARTIFACT || null, status: phases.every(phase => phase.status === 'passed') && failures.length === 0 ? 'passed' : 'failed', failures, phases };
+  const report = { schemaVersion: 1, ...current, os: process.platform, node: process.version, runtime: runtimeTiming(), host, artifact: env.PSTACK_ARTIFACT || null, status: phases.every(phase => phase.status === 'passed') && failures.length === 0 ? 'passed' : 'failed', failures, phases };
   save('report.json', report);
   const lines = [`## Pstack ${escape(report.check)}: ${report.status}`, '', `Source head: ${escape(report.sourceHeadSha || 'not a pull request')}`, `Tested checkout: ${escape(report.testedSha)}`, `Run: ${escape(report.runId)}, attempt ${report.runAttempt}`, `Artifact: ${escape(report.artifact || directory)}`, `Node: ${escape(report.node)}${host ? `; ${escape(host.name)}: ${escape(host.actualVersion || 'unavailable')} (expected ${escape(host.expectedVersion)})` : ''}`, '', '| Phase | Status | Duration | Reproduce |', '| --- | --- | --- | --- |', ...phases.map(phase => `| ${escape(phase.phase)} | ${phase.status} | ${phase.durationMs} ms | ${escape(phase.reproduce || 'Fix setup or missing evidence first')} |`), '', ...failures.map(error => `- ${escape(error)}`)];
+  lines.push('', 'Timing detail: phase `*-timing/*.jsonl` files contain monotonic offsets from each phase start. Test-file intervals overlap; do not sum them as wall time. A start without an end records an interrupted operation. Runtime capacity is recorded in report.json; test concurrency is recorded in the unit timing stream.');
   if (host?.resolution) lines.push('', `Resolved: ${escape(host.resolution.resolvedAt)}; npm ${escape(host.resolution.tag)}; Node engine ${escape(host.resolution.nodeEngine)}`);
   for (const phase of phases.filter(phase => phase.status !== 'passed')) {
     lines.push('', `### ${escape(phase.phase)}`, '', escape(phase.error));

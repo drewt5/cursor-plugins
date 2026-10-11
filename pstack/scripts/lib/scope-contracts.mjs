@@ -1,3 +1,4 @@
+import { startTiming } from './ci-timing.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { closeSync, mkdtempSync, mkdirSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -21,7 +22,9 @@ export async function checkScopeContracts({ host, source, expected }) {
     const command = (exe, args, cwd = project) => {
       const output = join(temporary, `command-${number++}.txt`);
       const descriptor = openSync(output, 'w');
+      const finishTiming = ['opencode', 'claude'].includes(exe) ? startTiming('native-command', exe === 'opencode' ? 'opencode debug skill' : 'claude plugin details') : () => {};
       const result = spawnSync(exe, args, { cwd, env: { ...env, PWD: cwd }, encoding: 'utf8', stdio: ['ignore', descriptor, 'pipe'], timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
+      finishTiming({ status: !result.error && result.status === 0 ? 'passed' : 'failed', exitCode: result.status, signal: result.signal, timedOut: result.error?.code === 'ETIMEDOUT' });
       closeSync(descriptor);
       assert.ok(!result.error && result.status === 0, `${exe} ${args.join(' ')}: ${result.error?.message || result.stderr}`);
       return readFileSync(output, 'utf8');
