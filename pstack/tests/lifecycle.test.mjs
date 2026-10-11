@@ -1,4 +1,5 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
+import { copyRuntimeSource } from './fixtures/runtime-source.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, readlinkSync, lstatSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
@@ -17,19 +18,22 @@ function snapshot(path, prefix = '') {
     return [[name, lstatSync(file).mode & 0o777, createHash('sha256').update(readFileSync(file)).digest('hex')]];
   });
 }
-function fixture(t) {
+const runtimeDirectory = mkdtempSync(join(tmpdir(), 'pstack-lifecycle-source-'));
+after(() => rmSync(runtimeDirectory, { recursive: true, force: true }));
+const runtimeSource = copyRuntimeSource(root, join(runtimeDirectory, 'source'));
+function fixture(t, selectedSource = root) {
   const temporary = mkdtempSync(join(tmpdir(), 'pstack-lifecycle-'));
   t.after(() => rmSync(temporary, { recursive: true, force: true }));
   const env = withHostVersionFixtures(temporary, isolatedEnvironment(temporary)), project = join(temporary, 'project');
   mkdirSync(project);
-  const run = (command, args) => spawnSync(process.execPath, [join(root, 'scripts', command + '.mjs'), ...args], { env, encoding: 'utf8' });
+  const run = (command, args) => spawnSync(process.execPath, [join(selectedSource, 'scripts', command + '.mjs'), ...args], { env, encoding: 'utf8' });
   return { temporary, env, project, run };
 }
 function ok(result) { assert.equal(result.status, 0, result.stderr); }
 for (const scope of ['project', 'global']) {
   for (const target of ['codex', 'opencode', 'claude-code', 'cursor', 'all']) {
     test(`${scope} ${target}: repeat install/uninstall preserves exact owned content and user files`, t => {
-      const { temporary, env, project, run } = fixture(t);
+      const { temporary, env, project, run } = fixture(t, target === 'all' ? root : runtimeSource);
       const destination = scope === 'global' ? env.HOME : project;
       mkdirSync(join(destination, '.pstack'), { recursive: true });
       writeFileSync(join(destination, '.pstack/models.json'), '{"version":1,"roles":{}}\n');

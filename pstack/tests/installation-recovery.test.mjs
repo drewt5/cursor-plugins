@@ -1,5 +1,5 @@
 import { installLegacy } from './fixtures/legacy-installation.mjs';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { cpSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { fork, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { compactActivation, serializablePrepared } from './fixtures/activation-fixtures.mjs';
+import { copyActivationSource, compactActivation, serializablePrepared } from './fixtures/activation-fixtures.mjs';
 import { prepareStagedActivation, applyStagedActivation, runStagedInstallation } from '../scripts/lib/installation-activation.mjs';
 import { recoverInstallation, recoverDemonstrablyDeadLocks } from '../scripts/lib/installation-recovery.mjs';
 import { readActivationJournal, recoveryCommand, journalName, instructionName } from '../scripts/lib/activation-journal.mjs';
@@ -17,6 +17,9 @@ import { verifyGeneration } from '../scripts/lib/installation-storage.mjs';
 import { isolatedEnvironment } from '../scripts/lib/test-environment.mjs';
 import { withHostVersionFixtures } from './fixtures/host-versions.mjs';
 const source = fileURLToPath(new URL('..', import.meta.url));
+const compactDirectory = mkdtempSync(join(tmpdir(), 'pstack-activation-source-'));
+after(() => rmSync(compactDirectory, { recursive: true, force: true }));
+const compactSource = copyActivationSource(source, join(compactDirectory, 'source'));
 function fixture(t, copy = false) {
   const base = mkdtempSync(join(tmpdir(), 'pstack-recovery-')); t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, "space ' scope"), home = join(base, 'home'); mkdirSync(root); mkdirSync(home);
@@ -48,11 +51,11 @@ function executeRecovery(f, command) {
   assert.equal(result.status, 0, result.stderr); return JSON.parse(result.stdout);
 }
 test('bounded exhaustive IPC crashes cover every compact journal/mutation boundary and exact prior/committed active snapshots', { timeout: 90000 }, async t => {
-  const control = fixture(t), prepared = compactActivation({ source, ...control }), before = activeSnapshot(control.root), boundaries = [];
+  const control = fixture(t), prepared = compactActivation({ source: compactSource, ...control }), before = activeSnapshot(control.root), boundaries = [];
   await applyStagedActivation(prepared, { boundary: name => boundaries.push(name) }); const after = activeSnapshot(control.root);
   const started = Date.now();
   for (const target of boundaries) {
-    const f = fixture(t), p = compactActivation({ source, ...f }), original = activeSnapshot(f.root);
+    const f = fixture(t), p = compactActivation({ source: compactSource, ...f }), original = activeSnapshot(f.root);
     await killAt(t, p, target, source, f.env);
     const journal = readActivationJournal(f.root), command = recoveryCommand(f.root, journal || { generation: p.generation });
     if (journal) assert.equal(readFileSync(join(f.root, instructionName), 'utf8'), command + '\n');
@@ -68,7 +71,7 @@ test('bounded exhaustive IPC crashes cover every compact journal/mutation bounda
   t.diagnostic(`${boundaries.length} deterministic crash points in ${Date.now() - started}ms; existing portable phase budget is 180000ms`);
 });
 test('third-party edit survives conflicted recovery; doctor reports the exact command without writing', async t => {
-  const f = fixture(t), p = compactActivation({ source, ...f });
+  const f = fixture(t), p = compactActivation({ source: compactSource, ...f });
   await killAt(t, p, 'verifying', source, f.env); writeFileSync(join(f.root, '.cursor/agents/replace.md'), 'user edit');
   const journal = readActivationJournal(f.root), command = recoveryCommand(f.root, journal), before = activeSnapshot(f.root);
   const doctorBefore = readFileSync(join(f.root, journalName), 'utf8');
@@ -104,7 +107,7 @@ test('legacy schemas recover the exact real directory/receipt through a candidat
   }
 });
 test('next internal mutation recovers before planning and preserves user models/unrelated skills', async t => {
-  const f = fixture(t), p = compactActivation({ source, ...f });
+  const f = fixture(t), p = compactActivation({ source: compactSource, ...f });
   writeFileSync(join(f.root, '.pstack/models.json'), JSON.stringify({ version: 1, roles: { 'bug-fix': 'inherit-parent' } }));
   mkdirSync(join(f.root, '.cursor/skills/unrelated'), { recursive: true }); writeFileSync(join(f.root, '.cursor/skills/unrelated/SKILL.md'), 'user skill');
   await assert.rejects(applyStagedActivation(p, { boundary: name => { if (name === 'mutation:0') throw new Error('interrupted'); } }), /interrupted/);
@@ -113,7 +116,7 @@ test('next internal mutation recovers before planning and preserves user models/
   assert.equal(readActivationJournal(f.root), null); assert.equal(existsSync(join(f.root, '.opencode')), false);
 });
 test('live or unverifiable lock owners and tampered journal paths are preserved', async t => {
-  const f = fixture(t), p = compactActivation({ source, ...f });
+  const f = fixture(t), p = compactActivation({ source: compactSource, ...f });
   await withInstallationMutation({ root: f.root }, async () => {
     assert.throws(() => recoverDemonstrablyDeadLocks(f.root), /Preserving live or unverifiable/);
     assert.equal(inspectInstallationLock(join(f.root, '.pstack/mutation.lock')).status, 'active');
@@ -142,7 +145,7 @@ test('global partial-target update across changed XDG roots restores both record
   for (const path of [join(f.home, '.pstack/mutation.lock'), join(oldRoot, '.pstack-mutation.lock'), join(newRoot, '.pstack-mutation.lock')]) assert.equal(inspectInstallationLock(path).status, 'absent');
 });
 test('unknown operation temporary bytes are preserved with a named retry action', async t => {
-  const f = fixture(t), p = compactActivation({ source, ...f });
+  const f = fixture(t), p = compactActivation({ source: compactSource, ...f });
   await assert.rejects(applyStagedActivation(p, { boundary: name => { if (name === 'prepared') throw new Error('interrupted'); } }), /interrupted/);
   const journal = readActivationJournal(f.root), op = journal.operations.find(item => item.after.kind === 'file' && item.name !== '.pstack/install.json');
   const path = `${op.path}.pstack-${journal.id}.tmp`; mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, 'unknown temporary bytes');
@@ -150,7 +153,7 @@ test('unknown operation temporary bytes are preserved with a named retry action'
   rmSync(path); assert.equal((await recoverInstallation(f.root)).status, 'restored-prior');
 });
 test('restoration itself survives an IPC kill after a before-image temporary write', { timeout: 20000 }, async t => {
-  const f = fixture(t), p = compactActivation({ source, ...f }), before = activeSnapshot(f.root);
+  const f = fixture(t), p = compactActivation({ source: compactSource, ...f }), before = activeSnapshot(f.root);
   await killAt(t, p, 'verifying', source, f.env);
   const journal = readActivationJournal(f.root), command = recoveryCommand(f.root, journal), retained = verifyGeneration(f.root, p.generation);
   const child = fork(join(retained, 'tests/fixtures/recovery-child.mjs'), [], { env: f.env, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });

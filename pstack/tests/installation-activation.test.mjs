@@ -1,5 +1,5 @@
-import { compactActivation } from './fixtures/activation-fixtures.mjs';
-import test from 'node:test';
+import { copyActivationSource, compactActivation } from './fixtures/activation-fixtures.mjs';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -12,6 +12,9 @@ import { prepareStagedActivation, applyStagedActivation, matchesObserved, journa
 import { observe, safePath, stateFrom } from '../scripts/lib/installation-state.mjs';
 import { withInstallationMutation, inspectInstallationLock, recoverInstallationLock } from '../scripts/lib/installation-lock.mjs';
 const source = fileURLToPath(new URL('..', import.meta.url));
+const compactDirectory = mkdtempSync(join(tmpdir(), 'pstack-activation-source-'));
+after(() => rmSync(compactDirectory, { recursive: true, force: true }));
+const compactSource = copyActivationSource(source, join(compactDirectory, 'source'));
 function fixture(t) {
   const base = mkdtempSync(join(tmpdir(), 'pstack-activation-')); t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, 'project'), home = join(base, 'home'); mkdirSync(root); mkdirSync(home);
@@ -19,7 +22,7 @@ function fixture(t) {
   return { base, root, home, options };
 }
 function compact(t) {
-  const f = fixture(t), prepared = compactActivation({ source, root: f.root, home: f.home, env: f.options.env });
+  const f = fixture(t), prepared = compactActivation({ source: compactSource, root: f.root, home: f.home, env: f.options.env });
   return { ...f, generation: prepared.generation, prepared };
 }
 
