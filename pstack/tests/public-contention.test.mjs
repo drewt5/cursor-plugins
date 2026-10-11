@@ -86,9 +86,9 @@ test('public install, rollback and uninstall refuse a live scope owner through c
 
 test('public global install locks its shared external OpenCode root across distinct homes', { timeout: 30000 }, async t => {
   const f = fixture(t), held = await owner(t, f, f.home, { global: true, target: 'opencode' });
-  const otherHome = join(f.base, 'other-home'); mkdirSync(otherHome);
-  // Pre-create parent metadata: partial lock acquisition may create this empty
-  // directory, but must remove its lock and preserve every existing byte.
+  const otherHome = join(f.base, 'aaa-other-home'); mkdirSync(otherHome);
+  // This scope sorts before the shared root, so acquisition creates its lock
+  // first. Pre-create metadata to assert an exact tree after partial release.
   mkdirSync(join(otherHome, '.pstack')); writeFileSync(join(otherHome, 'user.txt'), 'other home');
   const external = join(f.env.XDG_CONFIG_HOME, 'opencode');
   const before = tree(f.home), sharedBefore = tree(external), otherBefore = tree(otherHome);
