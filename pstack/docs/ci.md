@@ -198,3 +198,11 @@ Native timing covers each provider version probe, npm host installation, discove
 Nonzero exits, spawn errors, and timeouts retain failed end records when control returns to the caller. A killed process can leave a start without an end. Treat that interval as incomplete, not zero-duration or a successful operation. The existing phase status and raw logs remain authoritative for test outcomes. Runtime timing is enabled only by `ci-report.mjs`; ordinary local and user commands do not write timing files.
 
 Each process limits timing output to 256 KiB and each record to 4 KiB. A timing write failure fails the instrumented command rather than silently publishing success with missing measurements. Re-running a phase replaces that phase's previous timing directory. Finalization requires the referenced directory to exist. As with raw logs, runner loss can prevent evidence entirely.
+
+## Native fixture execution
+
+`check-hosts.mjs HOST` runs independent initial-discovery, rollback, legacy-migration, and scope-contract groups in separate worker processes. Only applicable groups run for each host. Longer scope and legacy groups start first to reduce idle time near the end of the phase. Each worker owns its temporary home, configuration, project and provider state; dependent operations inside a group remain sequential. The parent verifies each selected host version once. Public installer preflight and safety probes continue to run inside their scenarios.
+
+The worker pool uses at most two workers, capped by `os.availableParallelism()`. Discovery timing streams retain the selected concurrency and each fixture group's start/end alongside individual native commands. A group interval includes setup and cleanup, so it is not an additional cost to sum with its contained commands. Parallel group intervals overlap.
+
+A failing or cancelled group stops queued work, terminates active worker/provider process groups, and waits before parent fixture cleanup. Workers propagate cancellation to detached provider commands. The pool's 500ms forced-cleanup fallback precedes the phase reporter's existing 1000ms fallback; phase and command timeouts remain unchanged. `check-hosts.mjs HOST --scenario NAME` is the worker entrypoint used by the parent, not a replacement for the complete required host check.
