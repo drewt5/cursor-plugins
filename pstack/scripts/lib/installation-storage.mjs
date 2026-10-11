@@ -54,10 +54,17 @@ export function stagePackage({ source, root, write = writeFileSync, legacyIdenti
     assert.equal(stored.version, provenance.version, 'Stored version mismatch');
     assert.ok(stored.upstreamCommit === provenance.upstreamCommit || stored.classification === 'legacy-unknown' || provenance.classification === 'legacy-unknown', 'Stored upstream mismatch');
     const retained = { ...generation, provenance: stored };
-    verifyPayload(destination, stored, inventory);
+    assert.equal(digest(JSON.stringify(inventory)), stored.packageDigest, 'Retained inventory differs from package identity');
     const proof = safePath(root, inventoryName(generation.digest));
-    if (!present(proof)) { const marker = safePath(root, ownershipName(generation.digest)); assert.ok(present(marker)?.isFile(), 'Unowned retained package cannot be adopted'); assert.deepEqual(JSON.parse(readFileSync(marker)), generationDescriptorForMarker(retained)); writeFileSync(proof, JSON.stringify(inventory) + '\n', { flag: 'wx', mode: 0o600 }); }
-    verifyGeneration(root, retained);
+    if (present(proof)) {
+      verifyGeneration(root, retained);
+    } else {
+      const marker = safePath(root, ownershipName(generation.digest));
+      assert.ok(present(marker)?.isFile(), 'Unowned retained package cannot be adopted');
+      assert.deepEqual(JSON.parse(readFileSync(marker)), generationDescriptorForMarker(retained));
+      verifyPayload(destination, stored, inventory);
+      writeFileSync(proof, JSON.stringify(inventory) + '\n', { flag: 'wx', mode: 0o600 });
+    }
     return { ...retained, reused: true };
   }
   const releases = safePath(root, '.pstack/releases');
