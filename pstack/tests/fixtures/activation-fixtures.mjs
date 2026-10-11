@@ -1,10 +1,16 @@
-import { chmodSync } from 'node:fs';
-import { join } from 'node:path';
+import { chmodSync, cpSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { stagePackage } from '../../scripts/lib/installation-storage.mjs';
 import { generationDescriptor } from '../../scripts/lib/generation-contract.mjs';
 import { digest, installationSnapshot } from '../../scripts/lib/installation-state.mjs';
 import { planInstallation, applyInstallation } from '../../scripts/lib/installation-plan.mjs';
 export function compactActivation({ source, root, home, env }) {
+  // The exhaustive mutation fixture needs the real shipped recovery dependency
+  // closure, not every unrelated workflow/helper. Full-package integration cases
+  // and native lanes separately retain the complete public payload.
+  const runtimeSource = join(dirname(root), 'compact-runtime-source'); mkdirSync(runtimeSource, { recursive: true });
+  for (const name of ['scripts/lib', 'scripts/recover.mjs', 'tests/fixtures/activation-child.mjs', 'tests/fixtures/recovery-child.mjs', 'skills/pstack-runtime', 'skills/how', 'skills/why', 'agents', 'release.json', 'package.json']) cpSync(join(source, name), join(runtimeSource, name), { recursive: true });
+  source = runtimeSource;
   const generation = generationDescriptor(stagePackage({ source, root }));
   const file = bytes => ({ kind: 'file', hash: digest(bytes), mode: 0o644 });
   const common = { version: 4, targets: ['cursor'], opencodeRoot: '.opencode', provenance: generation.provenance, hostObservations: [], generation, renderingFingerprint: digest('config') };

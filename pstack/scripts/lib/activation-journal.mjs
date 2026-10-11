@@ -13,6 +13,9 @@ export const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 export function recoveryCommand(root, journal) {
   const generation = journal.recoveryGeneration ?? journal.generation;
   validateGeneration(generation); const packageRoot = verifyGeneration(root, generation);
+  return commandAt(root, packageRoot);
+}
+function commandAt(root, packageRoot) {
   assert.ok(present(join(packageRoot, 'scripts/recover.mjs'))?.isFile(), 'Retained recovery executable is missing');
   return `node ${quote(join(packageRoot, 'scripts/recover.mjs'))} --project ${quote(canonicalPath(root))}`;
 }
@@ -66,10 +69,14 @@ export function readActivationJournal(root) {
   assert.equal(journal.schemaVersion, 1); assert.equal(journal.kind, 'pstack-activation'); assert.match(journal.id, /^[a-f0-9-]{36}$/); assert.equal(journal.root, root, 'Interrupted scope moved; restore its original scope location before recovery');
   assert.ok(['prepared', 'applying', 'verifying', 'restoring', 'restored', 'committed'].includes(journal.state));
   const prior = parseInstallationState(JSON.stringify(journal.priorReceipt)), intended = parseInstallationState(JSON.stringify(journal.intendedReceipt));
-  validateGeneration(journal.generation); verifyGeneration(root, journal.generation);
-  if (journal.recoveryGeneration) { validateGeneration(journal.recoveryGeneration); verifyGeneration(root, journal.recoveryGeneration); }
-  if (journal.legacyGeneration) { validateGeneration(journal.legacyGeneration); verifyGeneration(root, journal.legacyGeneration); }
-  if (prior.version === 4) verifyGeneration(root, prior.generation);
+  // Deduplicate identical descriptors only within this synchronous parse. Every
+  // new diagnostic/recovery/activation call revalidates current stored bytes.
+  const verified = new Map();
+  const verify = generation => { validateGeneration(generation); const key = JSON.stringify(generation); if (!verified.has(key)) verified.set(key, verifyGeneration(root, generation)); return verified.get(key); };
+  verify(journal.generation);
+  if (journal.recoveryGeneration) verify(journal.recoveryGeneration);
+  if (journal.legacyGeneration) verify(journal.legacyGeneration);
+  if (prior.version === 4) verify(prior.generation);
   assert.ok(Array.isArray(journal.operations) && journal.operations.length && journal.operations.length <= 10000);
   assert.ok(Number.isSafeInteger(journal.progress) && journal.progress >= 0 && journal.progress <= journal.operations.length);
   const paths = new Set();
@@ -104,7 +111,7 @@ export function readActivationJournal(root) {
     for (let parent = dirname(op.path); parent !== boundary; parent = dirname(parent)) { assert.notEqual(parent, dirname(parent), 'Invalid parent boundary'); allowed.add(parent); }
   }
   assert.ok(journal.createdDirectories.every(path => allowed.has(path)), 'Journal directory is outside operation parents');
-  assert.equal(journal.recoveryInstruction, recoveryCommand(root, journal), 'Recovery instruction differs from validated retained identity');
+  assert.equal(journal.recoveryInstruction, commandAt(root, verify(journal.recoveryGeneration ?? journal.generation)), 'Recovery instruction differs from validated retained identity');
   return journal;
 }
 export function inspectInterruptedOperation(root) {
