@@ -10,3 +10,10 @@ test('only complete source/run-bound public lifecycle and manifesto evidence mar
     const proof = structuredClone(fixture()); change(proof); assert.throws(() => validateLifecycleEvidence(proof, identity, required, upstream));
   }
 });
+
+test('rejects empty cost job records', () => {
+  for (const sample of ['current', 'baseline']) {
+    const proof = fixture(); proof.cost[sample].jobs = Array.from({ length: 8 }, () => ({}));
+    assert.throws(() => validateLifecycleEvidence(proof, identity, required, upstream));
+  }
+});
