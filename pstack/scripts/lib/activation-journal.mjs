@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, fstatSync, openSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { isManagedEntryName, canonicalPath, digest, observe, pathFor, present, safePath, parseInstallationState } from './installation-state.mjs';
@@ -28,8 +28,27 @@ export function matchesObserved(path, actual, expected) {
 }
 export function persistJournal(root, journal) {
   const path = safePath(root, journalName), temporary = safePath(root, `${journalName}.${journal.id}.tmp`);
-  writeFileSync(temporary, JSON.stringify(journal, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-  renameSync(temporary, path);
+  // Acquire ownership separately: an existing temporary belongs to somebody
+  // else, and a failed write may leave only a prefix of our journal bytes.
+  const bytes = Buffer.from(JSON.stringify(journal, null, 2) + '\n');
+  const fd = openSync(temporary, 'wx', 0o600), owned = fstatSync(fd);
+  try {
+    writeFileSync(fd, bytes);
+    renameSync(temporary, path);
+  } catch (error) {
+    try {
+      const current = lstatSync(temporary);
+      if (current.isFile() && current.dev === owned.dev && current.ino === owned.ino) {
+        const partial = readFileSync(temporary);
+        if (partial.length <= bytes.length && bytes.subarray(0, partial.length).equals(partial)) rmSync(temporary);
+      }
+    } catch (cleanupError) {
+      if (cleanupError.code !== 'ENOENT') error.message += `; journal temporary preserved: ${cleanupError.message}`;
+    }
+    throw error;
+  } finally {
+    closeSync(fd);
+  }
 }
 export function assertJournalOperation(op, which) {
   const expected = op[which];

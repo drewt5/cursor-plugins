@@ -1,6 +1,8 @@
 import { installLegacy } from './fixtures/legacy-installation.mjs';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { cpSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -10,7 +12,7 @@ import { once } from 'node:events';
 import { copyActivationSource, compactActivation, serializablePrepared } from './fixtures/activation-fixtures.mjs';
 import { prepareStagedActivation, applyStagedActivation, runStagedInstallation } from '../scripts/lib/installation-activation.mjs';
 import { recoverInstallation, recoverDemonstrablyDeadLocks } from '../scripts/lib/installation-recovery.mjs';
-import { readActivationJournal, recoveryCommand, journalName, instructionName } from '../scripts/lib/activation-journal.mjs';
+import { readActivationJournal, recoveryCommand, journalName, instructionName, persistJournal } from '../scripts/lib/activation-journal.mjs';
 import { inspectInstallationLock, withInstallationMutation } from '../scripts/lib/installation-lock.mjs';
 import { canonicalPath, observe, stateFrom } from '../scripts/lib/installation-state.mjs';
 import { verifyGeneration } from '../scripts/lib/installation-storage.mjs';
@@ -52,9 +54,30 @@ function executeRecovery(f, command) {
 }
 test('bounded exhaustive IPC crashes cover every compact journal/mutation boundary and exact prior/committed active snapshots', { timeout: 90000 }, async t => {
   const control = fixture(t), prepared = compactActivation({ source: compactSource, ...control }), before = activeSnapshot(control.root), boundaries = [];
-  await applyStagedActivation(prepared, { boundary: name => boundaries.push(name) }); const after = activeSnapshot(control.root);
+  await applyStagedActivation(prepared, { boundary: (name, journal) => {
+    boundaries.push(name);
+    if (name === 'prepared') assert.deepEqual(journal.operations.map(op => [op.name, op.before.kind, op.after.kind]), [
+      ['.cursor/agents/nested/create.md', 'absent', 'file'],
+      ['.cursor/agents/remove.md', 'file', 'absent'],
+      ['.cursor/agents/replace.md', 'file', 'file'],
+      ['.cursor/skills/how', 'absent', 'link'],
+      ['.cursor/skills/why', 'link', 'absent'],
+      ['.pstack/install.json', 'file', 'file']
+    ]);
+  } }); const after = activeSnapshot(control.root);
+  const expected = [
+    'prepared', 'applying', 'directory:0',
+    'temporary:0', 'mutation:0', 'progress:0', // create file
+    'mutation:1', 'progress:1', // remove file
+    'temporary:2', 'mutation:2', 'progress:2', // replace file
+    'temporary:3', 'mutation:3', 'progress:3', // create link
+    'mutation:4', 'progress:4', // remove link
+    'temporary:5', 'mutation:5', 'progress:5', // receipt last
+    'verifying', 'committed', 'cleanup'
+  ];
+  assert.deepEqual(boundaries, expected, 'Compact crash coverage must not shrink with production callbacks');
   const started = Date.now();
-  for (const target of boundaries) {
+  for (const target of expected) {
     const f = fixture(t), p = compactActivation({ source: compactSource, ...f }), original = activeSnapshot(f.root);
     await killAt(t, p, target, source, f.env);
     const journal = readActivationJournal(f.root), command = recoveryCommand(f.root, journal || { generation: p.generation });
@@ -174,3 +197,71 @@ test('successful internal legacy activation cleans its certified directory backu
   } })).status, 'applied');
   assert.equal(existsSync(backup), false); assert.equal(observe(join(f.root, '.pstack/package')).kind, 'link'); assert.equal(stateFrom(join(f.root, '.pstack/install.json')).version, 4); assert.equal(readActivationJournal(f.root), null);
 });
+
+// Each test owns its process; patches are restored before recovery and no test
+// uses concurrency. Faults occur at actual fs calls, without a production seam.
+async function withFilesystemFault(method, intercept, operation) {
+  const original = fs[method];
+  fs[method] = (...args) => intercept(original, args);
+  syncBuiltinESMExports();
+  try { return await operation(); }
+  finally { fs[method] = original; syncBuiltinESMExports(); }
+}
+for (const fault of ['journal-write', 'journal-rename', 'activation-rename', 'restoration-rename']) {
+  test(`${fault} failure preserves user state and recovery converges`, async t => {
+    const f = fixture(t), p = compactActivation({ source: compactSource, ...f });
+    writeFileSync(join(f.root, '.cursor/agents/user.md'), 'unowned user bytes');
+    const before = activeSnapshot(f.root);
+    if (fault === 'restoration-rename') {
+      await assert.rejects(applyStagedActivation(p, { boundary: name => { if (name === 'verifying') throw new Error('stop before commit'); } }), /stop before commit/);
+    }
+    let fired = false, armed = !fault.startsWith('journal-');
+    const method = fault === 'journal-write' ? 'writeFileSync' : 'renameSync';
+    const intercept = (original, args) => {
+      const journalWrite = fault === 'journal-write' && (typeof args[0] === 'number' || String(args[0]).includes('activation.json.'));
+      const journalRename = fault === 'journal-rename' && canonicalPath(args[1]) === join(canonicalPath(f.root), journalName);
+      const imageRename = ['activation-rename', 'restoration-rename'].includes(fault) && args[1] === join(canonicalPath(f.root), '.cursor/agents/replace.md');
+      if (armed && !fired && (journalWrite || journalRename || imageRename)) {
+        fired = true;
+        if (journalWrite) original(args[0], String(args[1]).slice(0, 20), args[2]);
+        throw Object.assign(new Error(`injected EIO: ${fault}`), { code: 'EIO' });
+      }
+      return original(...args);
+    };
+    await assert.rejects(withFilesystemFault(method, intercept, () => fault === 'restoration-rename'
+      ? recoverInstallation(f.root)
+      : applyStagedActivation(p, { boundary: name => { if (name === 'prepared') armed = true; } })), new RegExp(`injected EIO: ${fault}`));
+    assert.ok(fired, 'The actual I/O boundary must execute');
+    assert.equal(readFileSync(join(f.root, '.cursor/agents/user.md'), 'utf8'), 'unowned user bytes');
+    const journal = readActivationJournal(f.root);
+    if (journal) {
+      const command = recoveryCommand(f.root, journal);
+      if (existsSync(join(f.root, instructionName))) assert.equal(readFileSync(join(f.root, instructionName), 'utf8'), command + '\n');
+      assert.equal(executeRecovery(f, command).status, 'restored-prior');
+    }
+    assert.deepEqual(activeSnapshot(f.root), before);
+    assert.equal((await recoverInstallation(f.root)).status, 'no-operation');
+    // A fresh attempt must not inherit a poisoned journal temporary.
+    assert.equal((await applyStagedActivation(p)).status, 'applied');
+  });
+}
+
+for (const change of ['preexisting', 'replacement', 'edited']) {
+  test(`journal persistence preserves ${change} unowned temporary bytes`, async t => {
+    const f = fixture(t), journal = { id: 'ownership-test', state: 'prepared' };
+    mkdirSync(join(f.root, '.pstack'));
+    const temporary = join(f.root, `${journalName}.${journal.id}.tmp`);
+    if (change === 'preexisting') {
+      writeFileSync(temporary, 'unowned journal bytes');
+      assert.throws(() => persistJournal(f.root, journal), { code: 'EEXIST' });
+    } else {
+      await assert.rejects(withFilesystemFault('renameSync', () => {
+        if (change === 'replacement') rmSync(temporary);
+        writeFileSync(temporary, 'unowned journal bytes');
+        throw Object.assign(new Error('rename denied after external edit'), { code: 'EACCES' });
+      }, async () => persistJournal(f.root, journal)), /rename denied/);
+    }
+    assert.equal(readFileSync(temporary, 'utf8'), 'unowned journal bytes');
+    assert.equal(existsSync(join(f.root, journalName)), false);
+  });
+}
