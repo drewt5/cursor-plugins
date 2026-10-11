@@ -1,4 +1,5 @@
 import { startTiming } from './ci-timing.mjs';
+import { timingEnvironment } from './ci-timing.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { closeSync, mkdtempSync, mkdirSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -10,16 +11,17 @@ import { characterizeDiscoverySafety } from './discovery-safety-check.mjs';
 import { loadHosts } from './tested-hosts.mjs';
 
 export const classifyScopeCatalog = classifyDiscoveryCatalog;
-export async function checkScopeContracts({ host, source, expected }) {
+export async function checkScopeContracts({ host, source, expected, signal }) {
   const selected = loadHosts().filter(row => host === 'all' || row.host === host);
   for (const row of selected) {
     const temporary = mkdtempSync(join(tmpdir(), `pstack-scopes-${row.host}-`));
-    const env = isolatedEnvironment(temporary), project = join(temporary, 'project');
+    const env = { ...isolatedEnvironment(temporary), ...timingEnvironment() }, project = join(temporary, 'project');
     // Match the default standalone Claude root while retaining a temporary home.
     env.CLAUDE_CONFIG_DIR = join(env.HOME, '.claude'); mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true });
     mkdirSync(project);
     let number = 0;
     const command = (exe, args, cwd = project) => {
+      signal?.throwIfAborted();
       const output = join(temporary, `command-${number++}.txt`);
       const descriptor = openSync(output, 'w');
       const finishTiming = ['opencode', 'claude'].includes(exe) ? startTiming('native-command', exe === 'opencode' ? 'opencode debug skill' : 'claude plugin details') : () => {};
@@ -37,7 +39,7 @@ export async function checkScopeContracts({ host, source, expected }) {
         results.push({ scenario, classification: 'unavailable-evidence', reason: 'No standalone catalog/origin command is exposed; standalone mock invocation is separate evidence.' });
         return;
       }
-      const result = await inspectNativeDiscovery({ host: row.host, executable: row.executable, project, scope: scopes.join('+'), env, expected, bundles: scopes.map(bundle), actualVersion: process.env.PSTACK_HOST_VERSION || row.version, environmentOwnership: 'isolated-test' });
+      const result = await inspectNativeDiscovery({ host: row.host, executable: row.executable, project, scope: scopes.join('+'), env, expected, bundles: scopes.map(bundle), actualVersion: process.env.PSTACK_HOST_VERSION || row.version, environmentOwnership: 'isolated-test', signal });
       assert.equal(result.status, 'observed', JSON.stringify(result));
       results.push({ scenario, ...result });
       if (['project-only', 'global-only'].includes(scenario)) assert.equal(result.classification, 'identified-source', `${row.host} ${scenario}: ${result.classification}; ${result.completeBundles.length} complete bundles`);
@@ -45,7 +47,7 @@ export async function checkScopeContracts({ host, source, expected }) {
     try {
       command('git', ['init', '-q']);
       install('project'); await inspect('project-only', ['project']);
-      const safety = await characterizeDiscoverySafety({ temporary, project, env, row, expected, bundles: [bundle('project')] });
+      const safety = await characterizeDiscoverySafety({ temporary, project, env, row, expected, signal, bundles: [bundle('project')] });
       results.push({ scenario: 'existing-environment-safety', classification: 'unavailable-evidence', ...safety });
       install('project', true);
       install('global'); await inspect('global-only', ['global']);
