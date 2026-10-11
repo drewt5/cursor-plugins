@@ -9,10 +9,22 @@ import { stagePackage, verifyGeneration, renderStagedArtifacts } from '../script
 import { packageInventory } from '../scripts/lib/package-provenance.mjs';
 import { safePath } from '../scripts/lib/installation-state.mjs';
 const original = fileURLToPath(new URL('..', import.meta.url));
-function fixture(t) {
+function fixture(t, { fullPackage = false } = {}) {
   const base = mkdtempSync(join(tmpdir(), 'pstack-storage-')); t.after(() => rmSync(base, { recursive: true, force: true }));
   const source = join(base, 'source'), root = join(base, 'project'); mkdirSync(root);
-  cpSync(original, source, { recursive: true, filter: path => !path.split('/').includes('node_modules') && !path.endsWith('/.git') });
+  if (fullPackage) {
+    cpSync(original, source, { recursive: true, filter: path => !path.split('/').includes('node_modules') && !path.endsWith('/.git') });
+  } else {
+    mkdirSync(join(source, 'nested'), { recursive: true });
+    for (const [name, bytes, mode] of [
+      ['release.json', readFileSync(join(original, 'release.json')), 0o644],
+      ['README.md', 'Storage fixture\n', 0o644],
+      ['nested/content.txt', 'Nested payload\n', 0o644],
+      ['nested/run.sh', '#!/bin/sh\nexit 0\n', 0o755],
+    ]) {
+      const path = join(source, name); writeFileSync(path, bytes); chmodSync(path, mode);
+    }
+  }
   return { base, source, root };
 }
 test('staging verifies and reuses complete bytes/modes without activation or receipt publication', async t => {
@@ -38,7 +50,7 @@ test('failed writes, corrupt copies, unsafe parents and source symlinks preserve
   assert.throws(() => stagePackage({ source, root }), /symlink/);
 });
 test('retained renderer accepts effective config without editing it and stable references survive relocation/source removal', async t => {
-  const { source, root, base } = fixture(t), generation = stagePackage({ source, root });
+  const { source, root, base } = fixture(t, { fullPackage: true }), generation = stagePackage({ source, root });
   const config = { version: 1, roles: { worker: ['vendor/example-model'] } };
   const rendered = await renderStagedArtifacts({ root, generation, targets: ['codex', 'opencode', 'claude-code', 'cursor'], opencodeRoot: '.opencode', config });
   assert.equal(existsSync(join(root, '.pstack/models.json')), false); assert.equal(existsSync(join(root, '.pstack/package')), false);
