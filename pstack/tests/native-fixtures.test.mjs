@@ -102,3 +102,14 @@ test('actual phase timeout reaps synchronous and detached providers before paren
   for (const name of ['async-pid', 'sync-pid']) assert.throws(() => process.kill(Number(readFileSync(f.path(name))), 0), { code: 'ESRCH' });
   assert.match(JSON.parse(readFileSync(f.path('report/discovery.json'))).error, /Timed out/);
 });
+
+test('cancellation during successful Codex cleanup still reaps its detached provider', async t => {
+  const f = fixture(t), executable = f.path('provider');
+  writeFileSync(executable, `#!${process.execPath}\nconst fs=require('node:fs');fs.writeFileSync(${JSON.stringify(f.path('pid'))},String(process.pid));process.on('SIGTERM',()=>fs.writeFileSync(${JSON.stringify(f.path('term'))},'term'));require('node:readline').createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);if(m.id)process.stdout.write(JSON.stringify({id:m.id,result:{data:[]}})+'\\n');});setInterval(()=>{},1000);`, { mode: 0o755 });
+  const module = new URL('../scripts/lib/native-catalog.mjs', import.meta.url).href;
+  const task = f.task('codex-cleanup', `import{codexSkills}from${JSON.stringify(module)};const c=new AbortController();process.on('SIGTERM',()=>c.abort());try{await codexSkills(${JSON.stringify(f.root)},process.env,{executable:${JSON.stringify(executable)},signal:c.signal});}catch{process.exitCode=1;}`);
+  const controller = new AbortController(), done = runNativeFixtures([task], { signal: controller.signal });
+  await until(() => existsSync(f.path('term'))); controller.abort();
+  await assert.rejects(done, /cancelled/);
+  assert.throws(() => process.kill(Number(readFileSync(f.path('pid'))), 0), { code: 'ESRCH' });
+});

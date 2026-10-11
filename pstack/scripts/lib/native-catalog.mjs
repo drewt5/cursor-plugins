@@ -45,9 +45,12 @@ export async function codexSkills(project, isolated, { executable = 'codex', tim
       if (!proc.pid) return;
       try { process.platform === 'win32' ? proc.kill(signal) : process.kill(-proc.pid, signal); } catch (error) { if (error.code !== 'ESRCH') throw error; }
     };
+    const abortCleanup = () => kill('SIGKILL');
+    signal?.addEventListener('abort', abortCleanup, { once: true });
     kill(signal?.aborted ? 'SIGKILL' : 'SIGTERM');
     const force = setTimeout(() => kill('SIGKILL'), 1000);
     await closed;
+    signal?.removeEventListener('abort', abortCleanup);
     clearTimeout(force);
     kill('SIGKILL');
     finishTiming({ status, timedOut });
