@@ -6,7 +6,7 @@ import { evidenceFixture } from './fixtures/release-evidence.mjs';
 import { lifecycleFixture } from './fixtures/lifecycle-evidence.mjs';
 const identity = { sourceCommit: 'a'.repeat(40), packageDigest: 'b'.repeat(64), upstreamCommit: 'c'.repeat(40) };
 const input = evidenceFixture();
-input.jobs[0].steps.push({ name: 'Skipped fixture', number: 2, status: 'completed', conclusion: 'skipped' });
+input.jobs[0].steps.push({ name: 'Skipped fixture', number: 2, status: 'completed', conclusion: 'skipped', started_at: input.jobs[0].started_at, completed_at: input.jobs[0].started_at });
 const required = validateReleaseEvidence(input), upstream = { sharedWorkflowDiffDigest: 'd'.repeat(64) };
 const fixture = () => lifecycleFixture(identity, required, upstream);
 const validate = proof => validateLifecycleEvidence(proof, identity, required, upstream);
@@ -99,4 +99,74 @@ test('historical missing report source is allowed only with explicit baseline pr
     p => p.cost.current.reportProvenance = structuredClone(p.cost.baseline.reportProvenance),
     p => p.cost.baseline.jobs[0].id = p.cost.current.jobs[0].id,
   ]) { const bad = structuredClone(proof); change(bad); assert.throws(() => validate(bad)); }
+});
+
+test('rejects oversized steps and phases in either sample', () => {
+  for (const sample of ['current', 'baseline']) for (const kind of ['step', 'phase']) {
+    const proof = fixture(), job = proof.cost[sample].jobs.find(item => item.executionPhases.length);
+    if (kind === 'step') job.steps[0].durationSeconds = 1e12;
+    else { job.executionPhases[0].durationMs = 11001; job.phaseExecutionSeconds = 11.001; }
+    assert.throws(() => validate(proof), /exceeds enclosing job/);
+  }
+});
+test('phase containment allows exactly one second for timestamp rounding', () => {
+  const source = evidenceFixture();
+  source.reports[0].report.phases[0].durationMs = 11000;
+  source.reports[0].bytes = JSON.stringify(source.reports[0].report);
+  const rounded = validateReleaseEvidence(source);
+  const proof = lifecycleFixture(identity, rounded, upstream);
+  assert.equal(validateLifecycleEvidence(proof, identity, rounded, upstream).status, 'verified-for-maintainer-review');
+  const job = proof.cost.baseline.jobs.find(item => item.executionPhases[0]?.durationMs === 11000);
+  job.executionPhases[0].durationMs++; job.phaseExecutionSeconds += 0.001;
+  assert.throws(() => validateLifecycleEvidence(proof, identity, rounded, upstream), /exceeds enclosing job/);
+});
+test('rejects zero wall time while retaining nontrivial execution phases', () => {
+  const source = evidenceFixture();
+  source.reports[0].report.phases[0].durationMs = 8000;
+  source.reports[0].bytes = JSON.stringify(source.reports[0].report);
+  const measured = validateReleaseEvidence(source);
+  const proof = lifecycleFixture(identity, measured, upstream);
+  for (const sample of ['current', 'baseline']) {
+    const bad = structuredClone(proof), cost = bad.cost[sample];
+    cost.jobs.forEach(job => { job.start = job.end = cost.createdAt; job.durationSeconds = job.preJobWaitSeconds = 0; });
+    cost.criticalPathSeconds = cost.eventToLastJobSeconds = 0;
+    assert.throws(() => validateLifecycleEvidence(bad, identity, measured, upstream));
+  }
+});
+test('current cost timestamps and step durations must match supplied GitHub data', () => {
+  for (const change of [
+    cost => { cost.createdAt = new Date(Date.parse(cost.createdAt) - 1000).toISOString(); cost.eventToLastJobSeconds++; cost.jobs.forEach(job => job.preJobWaitSeconds++); },
+    cost => { const job = cost.jobs[0]; job.end = new Date(Date.parse(job.end) + 1000).toISOString(); job.durationSeconds++; },
+    cost => cost.jobs[0].steps[0].durationSeconds = 1,
+  ]) { const proof = fixture(); change(proof.cost.current); assert.throws(() => validate(proof), /differs|required duration/); }
+  for (const change of [
+    data => delete data.createdAt,
+    data => delete data.jobs[0].startedAt,
+    data => delete data.jobs[0].steps[0].completedAt,
+    data => data.jobs[0].steps[0].startedAt = data.jobs[0].completedAt,
+    data => { data.jobs[0].steps[0].startedAt = data.jobs[0].steps[0].completedAt = '2026-10-11T00:00:00Z'; },
+  ]) { const data = structuredClone(required); change(data); assert.throws(() => validateLifecycleEvidence(fixture(), identity, data, upstream)); }
+});
+
+test('step containment accepts the rounding boundary and rejects just over', () => {
+  const proof = fixture(), job = proof.cost.baseline.jobs[0];
+  job.steps[0].durationSeconds = 11;
+  assert.equal(validate(proof).status, 'verified-for-maintainer-review');
+  job.steps[0].durationSeconds = 11.001;
+  assert.throws(() => validate(proof), /exceeds enclosing job/);
+});
+test('sequential phases must together fit their job', () => {
+  const proof = fixture(), job = proof.cost.baseline.jobs.find(item => item.executionPhases.length === 3);
+  job.executionPhases.forEach(phase => phase.durationMs = 4000); job.phaseExecutionSeconds = 12;
+  assert.throws(() => validate(proof), /sequential phases/);
+});
+
+test('sequential step totals allow one second of rounding and reject impossible totals', () => {
+  const proof = fixture(), job = proof.cost.baseline.jobs[0];
+  job.steps = [{ name: 'First', status: 'success', durationSeconds: 5 }, { name: 'Second', status: 'success', durationSeconds: 6 }];
+  assert.equal(validate(proof).status, 'verified-for-maintainer-review');
+  job.steps[1].durationSeconds += 0.001;
+  assert.throws(() => validate(proof), /sequential steps/);
+  job.steps = Array.from({ length: 10 }, (_, i) => ({ name: `Step ${i}`, status: 'success', durationSeconds: 10 }));
+  assert.throws(() => validate(proof), /sequential steps/);
 });

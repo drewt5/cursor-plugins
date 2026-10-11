@@ -34,6 +34,11 @@ function timestamp(value, label) {
   assert.ok(typeof value === 'string' && Number.isFinite(Date.parse(value)), `Missing/invalid cost timestamp: ${label}`);
   return Date.parse(value);
 }
+// GitHub timestamps have second resolution; measured commands can exceed the
+// rounded enclosing interval by up to one second.
+function fitsJob(seconds, jobSeconds, label) {
+  assert.ok(seconds <= jobSeconds + 1, `Cost duration exceeds enclosing job: ${label}`);
+}
 function positiveId(value, label) {
   assert.ok(Number.isSafeInteger(value) && value > 0, `Invalid positive cost ID: ${label}`);
 }
@@ -57,6 +62,7 @@ function validateCostSample(sample, required) {
   if (required) {
     for (const key of ['runAttempt', 'sourceHeadSha', 'event', 'checkoutLogDigest']) assert.equal(sample[key], required[key], `Current cost ${key} differs from required evidence`);
     assert.equal(String(sample.runId), required.runId, 'Current cost run differs');
+    assert.equal(created, timestamp(required.createdAt, 'required.createdAt'), 'Current cost creation timestamp differs');
     assert.deepEqual(sample.reportDigests, Object.fromEntries(required.reports.map(report => [report.check, report.reportDigest])), 'Current cost report digests differ');
     assert.equal(sample.reportProvenance, undefined, 'Historical report provenance is baseline-only');
   } else {
@@ -79,22 +85,39 @@ function validateCostSample(sample, required) {
     elapsed(job.preJobWaitSeconds, (start - created) / 1000, `${job.name}.preJobWaitSeconds`);
     assert.ok(Array.isArray(job.steps) && job.steps.length, 'Missing cost steps');
     const stepNames = new Set();
+    let stepSeconds = 0;
     for (const step of job.steps) {
       assert.ok(typeof step.name === 'string' && step.name.trim() && !stepNames.has(step.name), 'Missing/duplicate cost step name'); stepNames.add(step.name);
       assert.ok(['success', 'skipped'].includes(step.status), 'Unsuccessful cost step conclusion');
-      duration(step.durationSeconds, `${job.name}.${step.name}`);
+      stepSeconds += duration(step.durationSeconds, `${job.name}.${step.name}`);
+      fitsJob(step.durationSeconds, (end - start) / 1000, `${job.name}.${step.name}`);
     }
+    fitsJob(stepSeconds, (end - start) / 1000, `${job.name}.sequential steps`);
     const check = requiredJobChecks[job.name];
     assert.ok(Array.isArray(job.executionPhases), 'Missing execution phase measurements');
     assert.deepEqual(job.executionPhases.map(phase => phase.phase).sort(), [...(requiredPhases[check] ?? [])].sort(), 'Incomplete cost execution phases');
     let phaseMs = 0;
-    for (const phase of job.executionPhases) phaseMs += duration(phase.durationMs, `${job.name}.${phase.phase}`);
+    for (const phase of job.executionPhases) {
+      phaseMs += duration(phase.durationMs, `${job.name}.${phase.phase}`);
+      fitsJob(phase.durationMs / 1000, (end - start) / 1000, `${job.name}.${phase.phase}`);
+    }
+    fitsJob(phaseMs / 1000, (end - start) / 1000, `${job.name}.sequential phases`);
     elapsed(job.phaseExecutionSeconds, phaseMs / 1000, `${job.name}.phaseExecutionSeconds`);
     if (required) {
       const expectedJob = required.jobs.find(item => item.name === job.name);
       assert.equal(job.id, expectedJob.id, 'Current cost job ID differs');
+      assert.equal(start, timestamp(expectedJob.startedAt, 'required job start'), 'Current cost job start differs');
+      assert.equal(end, timestamp(expectedJob.completedAt, 'required job end'), 'Current cost job end differs');
       const ordered = steps => steps.map(step => [step.name, step.status]).sort(([a], [b]) => a.localeCompare(b));
       assert.deepEqual(ordered(job.steps), ordered(expectedJob.steps.map(step => ({ name: step.name, status: step.conclusion }))), 'Current cost step outcomes differ');
+      for (const step of job.steps) {
+        const expectedStep = expectedJob.steps.find(item => item.name === step.name);
+        const stepStart = timestamp(expectedStep.startedAt, 'required step start');
+        const stepEnd = timestamp(expectedStep.completedAt, 'required step end');
+        assert.ok(stepStart <= stepEnd, 'Reversed required step timestamps');
+        assert.ok(stepStart >= start - 1000 && stepEnd <= end + 1000, 'Required step timestamps exceed enclosing job');
+        elapsed(step.durationSeconds, (stepEnd - stepStart) / 1000, `${job.name}.${step.name} required duration`);
+      }
       const phases = required.reports.find(report => report.check === check)?.phases ?? [];
       for (const phase of job.executionPhases) assert.equal(phase.durationMs, phases.find(item => item.phase === phase.phase)?.durationMs, 'Current cost phase duration differs');
     }

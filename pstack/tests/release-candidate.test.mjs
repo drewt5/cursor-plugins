@@ -87,6 +87,12 @@ test('CLI lifecycle evidence validates deterministically and rejects bad costs w
     result = cli(rejected); assert.equal(result.status, 1); assert.match(result.stderr, /cost jobs/);
     assert.equal(existsSync(rejected.output), false);
   }
+  const contradictory = structuredClone(proof);
+  contradictory.cost.current.jobs[0].steps[0].durationSeconds = 1e12;
+  writeFileSync(proofPath, JSON.stringify(contradictory));
+  const rejectedTiming = { ...options, output: join(f.root, 'rejected-timing.json') };
+  result = cli(rejectedTiming); assert.equal(result.status, 1); assert.match(result.stderr, /exceeds enclosing job/);
+  assert.equal(existsSync(rejectedTiming.output), false);
   assert.equal(f.git(['status', '--porcelain']), '');
   assert.equal(f.git(['rev-parse', 'HEAD']), f.head);
   assert.equal(f.git(['tag', '--list']), '');
