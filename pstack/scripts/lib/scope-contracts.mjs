@@ -57,6 +57,9 @@ export async function checkScopeContracts({ host, source, expected }) {
         assert.equal(results.at(-1).classification, 'identified-source');
         assert.ok(results.at(-1).independentIdentities.includes('poteto-mode'));
         assert.ok(results.at(-1).entries.some(entry => entry.name === 'pstack:poteto-mode'));
+        assert.ok(results.at(-1).entries.some(entry => entry.name === 'poteto-mode' && entry.origin === realpathSync(join(directory, 'SKILL.md'))));
+        results.at(-1).coexistence = { status: 'coherent', pstackScope: 'project', independentScope: 'global', sameNameQualified: true };
+        assert.equal(readFileSync(join(directory, 'SKILL.md'), 'utf8').includes('Independent fixture'), true);
       }
       if (row.host === 'opencode') {
         const same = results.at(-1);

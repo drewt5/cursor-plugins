@@ -1,4 +1,6 @@
-# Portability audit
+# Initial portability audit
+
+This is the original pre-transaction snapshot. Current lifecycle, CI cost, public-clone evidence and P1-P10 limits are reviewed in [lifecycle acceptance](lifecycle-acceptance.md); counts/timings below describe that earlier snapshot.
 
 The fork layout was verified locally on macOS with Codex CLI 0.162.1, OpenCode 1.14.50, and Claude Code 2.1.296. The full suite passed, including native discovery and mock API invocation in all three hosts.
 

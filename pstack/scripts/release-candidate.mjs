@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { validateLifecycleEvidence } from './lib/lifecycle-evidence.mjs';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
@@ -10,7 +11,7 @@ import { validateHosts } from './lib/tested-hosts.mjs';
 import { candidateGit, compareUpstream, validateUpstreamReview } from './lib/upstream-review.mjs';
 import { validateReleaseEvidence } from './lib/release-evidence.mjs';
 const defaultSource = fileURLToPath(new URL('..', import.meta.url));
-const help = 'Usage: release-candidate.mjs [--source PATH] --tag pstack-vVERSION --reports DIR --run-meta FILE --jobs FILE --checkout-log FILE --review FILE [--upgrade-evidence FILE] --run ID --attempt N --output FILE\nOr: release-candidate.mjs [--source PATH] --inspect-upstream\nConsumes exact required-baseline evidence. Writes only a new explicit output outside the package. No tag/release/provider/user installation mutation.';
+const help = 'Usage: release-candidate.mjs [--source PATH] --tag pstack-vVERSION --reports DIR --run-meta FILE --jobs FILE --checkout-log FILE --review FILE [--upgrade-evidence FILE] [--lifecycle-evidence FILE] --run ID --attempt N --output FILE\nOr: release-candidate.mjs [--source PATH] --inspect-upstream\nConsumes exact required-baseline evidence. Writes only a new explicit output outside the package. No tag/release/provider/user installation mutation.';
 const json = path => JSON.parse(readFileSync(path, 'utf8'));
 export function supportedUpgradeBaseline(source, tag, supplied, proof, currentEvidence) {
   const tags = candidateGit(source, ['tag', '--list', 'pstack-v*', '--sort=-version:refname']).split('\n').filter(value => value && value !== tag);
@@ -50,6 +51,7 @@ export function prepareReleaseCandidate(options) {
   const baseline = supportedUpgradeBaseline(source, options.tag, review.upgradeBaseline, options['upgrade-evidence'] ? json(options['upgrade-evidence']) : undefined, requiredEvidence);
   const tagExists = candidateGit(source, ['tag', '--points-at', sourceCommit]).split('\n').includes(options.tag);
   const record = { schemaVersion: 1, kind: 'portable-release-candidate', status: 'candidate-validated', identity: { ...identity, packageDigest: provenance.packageDigest, tagState: tagExists ? 'verified-existing-tag' : 'pre-tag-candidate' }, upgradeBaseline: baseline, upstreamReview, requiredEvidence, lifecycleGate: { status: 'pending', issue: 'https://github.com/drewt5/cursor-plugins/issues/23', reason: 'Candidate validation alone is not release readiness or model reasoning/GUI verification.' } };
+  if (options['lifecycle-evidence']) record.lifecycleGate = validateLifecycleEvidence(json(options['lifecycle-evidence']), record.identity, requiredEvidence, upstreamReview);
   const output = canonicalPath(options.output);
   assert.ok(output !== source && !output.startsWith(source + sep), 'Keep generated evidence outside the hashed source package');
   assert.equal(candidateGit(source, ['rev-parse', 'HEAD']), sourceCommit, 'Source head changed during collection');
@@ -64,7 +66,7 @@ if (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[
       const arg = process.argv[i];
       if (arg === '--help') { console.log(help); process.exit(0); }
       if (arg === '--inspect-upstream') options['inspect-upstream'] = true;
-      else if (['source', 'tag', 'reports', 'run-meta', 'jobs', 'checkout-log', 'review', 'upgrade-evidence', 'run', 'attempt', 'output'].some(key => arg === '--' + key) && process.argv[i + 1] && !process.argv[i + 1].startsWith('--')) options[arg.slice(2)] = process.argv[++i];
+      else if (['source', 'tag', 'reports', 'run-meta', 'jobs', 'checkout-log', 'review', 'upgrade-evidence', 'lifecycle-evidence', 'run', 'attempt', 'output'].some(key => arg === '--' + key) && process.argv[i + 1] && !process.argv[i + 1].startsWith('--')) options[arg.slice(2)] = process.argv[++i];
       else throw new Error(`Unknown/incomplete option ${arg}. ${help}`);
     }
     console.log(JSON.stringify(prepareReleaseCandidate(options), null, 2));

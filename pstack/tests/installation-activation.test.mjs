@@ -1,16 +1,15 @@
+import { compactActivation } from './fixtures/activation-fixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { fork, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { stagePackage, verifyGeneration } from '../scripts/lib/installation-storage.mjs';
-import { generationDescriptor } from '../scripts/lib/generation-contract.mjs';
+import { verifyGeneration } from '../scripts/lib/installation-storage.mjs';
 import { prepareStagedActivation, applyStagedActivation, matchesObserved, journalName } from '../scripts/lib/installation-activation.mjs';
-import { digest, installationSnapshot, observe, safePath, stateFrom } from '../scripts/lib/installation-state.mjs';
-import { planInstallation, applyInstallation } from '../scripts/lib/installation-plan.mjs';
+import { observe, safePath, stateFrom } from '../scripts/lib/installation-state.mjs';
 import { withInstallationMutation, inspectInstallationLock, recoverInstallationLock } from '../scripts/lib/installation-lock.mjs';
 const source = fileURLToPath(new URL('..', import.meta.url));
 function fixture(t) {
@@ -20,14 +19,10 @@ function fixture(t) {
   return { base, root, home, options };
 }
 function compact(t) {
-  const f = fixture(t), generation = generationDescriptor(stagePackage({ source, root: f.root }));
-  const file = bytes => ({ kind: 'file', hash: digest(bytes), mode: 0o644 });
-  const common = { version: 4, targets: ['cursor'], opencodeRoot: '.opencode', provenance: generation.provenance, hostObservations: [], generation, renderingFingerprint: digest('config') };
-  const prior = { state: { ...common, entries: { '.pstack/package': { kind: 'link', to: `releases/${generation.digest}` }, '.cursor/agents/replace.md': file('old'), '.cursor/agents/remove.md': file('remove'), '.cursor/skills/why': { kind: 'link', to: '../../.pstack/package/skills/why' } } }, contents: new Map([['.cursor/agents/replace.md', 'old'], ['.cursor/agents/remove.md', 'remove']]) };
-  applyInstallation(planInstallation(installationSnapshot({ root: f.root, desired: prior.state }), prior)); chmodSync(join(f.root, '.pstack/install.json'), 0o600);
-  const desired = { state: { ...common, entries: { '.pstack/package': prior.state.entries['.pstack/package'], '.cursor/agents/replace.md': file('new'), '.cursor/agents/create.md': file('create'), '.cursor/skills/how': { kind: 'link', to: '../../.pstack/package/skills/how' } } }, contents: new Map([['.cursor/agents/replace.md', 'new'], ['.cursor/agents/create.md', 'create']]) };
-  return { ...f, generation, prepared: { ...f.options, plan: planInstallation(installationSnapshot({ root: f.root, desired: desired.state }), desired), generation, failures: [], discoveryFailures: [], targets: ['cursor'], diagnosticOptions: { root: f.root, globalRoot: f.home, env: f.options.env } } };
+  const f = fixture(t), prepared = compactActivation({ source, root: f.root, home: f.home, env: f.options.env });
+  return { ...f, generation: prepared.generation, prepared };
 }
+
 test('internal fresh activation records accurate boundaries, publishes a verified receipt, and converges; public installer uses the same transaction', async t => {
   const f = fixture(t), prepared = await prepareStagedActivation(f.options), boundaries = [];
   assert.equal(prepared.failures.length, 0);

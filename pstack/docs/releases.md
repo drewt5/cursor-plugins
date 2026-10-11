@@ -63,7 +63,7 @@ node pstack/scripts/release-candidate.mjs --tag "$pstack_tag" \
 
 The output is compact self-contained JSON: exact source/upstream/digest/tag state, required workflow/run/attempt, eight job and complete step outcomes, six report digests, source/tested SHA, every phase command/outcome/log digest, actual tested host versions, upgrade baseline, and reviewed upstream intent delta. Re-running against the same inputs is deterministic; run IDs, job IDs, phase durations and other retained run metadata naturally differ between runs. Missing/expired input reports or logs, stale attempts/commits, failed/incomplete jobs/phases, unknown versions, dirty/version/tag mismatches, and advisory substitution are rejected before output. Existing evidence files are not overwritten.
 
-Validation launches no provider, model request, or user installer and creates no tag/release. A missing expected tag is a pre-tag candidate; an existing matching tag is explicitly verified. Candidate validation remains `candidate-validated`, with the [complete lifecycle gate (#23)](https://github.com/drewt5/cursor-plugins/issues/23) pending. Do not call a candidate release-ready until that gate passes. At explicit publication, attach this evidence JSON to the selected release so identities/outcomes remain interpretable after ordinary artifacts/logs expire at their normal short retention. The record is not a publisher-authenticity signature or semantic-parity proof.
+Validation launches no provider, model request, or user installer and creates no tag/release. A missing expected tag is a pre-tag candidate; an existing matching tag is explicitly verified. Candidate validation remains `candidate-validated`. Supply fresh `--lifecycle-evidence FILE` from the [lifecycle acceptance protocol](lifecycle-acceptance.md) to bind the exact public-clone/manifesto/cost evidence to this source/run/attempt and mark the lifecycle gate `verified-for-maintainer-review`. Without that proof it stays pending, even after the roadmap issue closes. Maintainer review still decides readiness; no tag/release is created. At explicit publication, attach this evidence JSON to the selected release so identities/outcomes remain interpretable after ordinary artifacts/logs expire at their normal short retention. The record is not a publisher-authenticity signature or semantic-parity proof.
 
 ## Review upstream intent proportionally
 
@@ -95,3 +95,17 @@ Compare the selected commit/digest with the published self-contained evidence be
 - Account for upstream skill inventory and material instruction deltas, identify generally useful upstream proposals, and retain explicit semantic/GUI/Windows/independence gaps.
 - Exercise the immediately previous supported upgrade fixture, or explicit schema-1/2 legacy baseline for the first release. Link recovery/rollback documentation and pass the later complete lifecycle gate before readiness/publication.
 - Publish only through an explicit maintainer action; retain the self-contained evidence with that release while leaving ordinary CI artifact retention and repository protection unchanged.
+
+For an exact pre-tag integration candidate (the published-tag example above applies only after publication):
+
+```sh
+git clone https://github.com/drewt5/cursor-plugins.git pstack-fork
+cd pstack-fork
+git fetch origin --tags
+pstack_candidate=REPLACE_WITH_EXACT_CANDIDATE_COMMIT
+git switch --detach "$pstack_candidate"
+node pstack/scripts/release.mjs --check
+node pstack/scripts/install.mjs --target codex --project /absolute/path/to/project
+```
+
+The [public-clone integration](lifecycle-acceptance.md) executes this exact-commit sequence and the user lifecycle with disposable state. Keep its evidence outside the hashed package and attach it with the self-contained candidate record.

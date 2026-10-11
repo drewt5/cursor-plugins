@@ -1,3 +1,4 @@
+import { withHostVersionFixtures } from './fixtures/host-versions.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -49,9 +50,7 @@ function models(f, model, reasoning = 'high') {
   const bytes = JSON.stringify({ version: 1, reasoning, hosts: { opencode: { roles: { 'bug-fix': model } } } }); writeFileSync(join(f.root, '.pstack/models.json'), bytes); return bytes;
 }
 function opencodeFixture(f) {
-  const bin = join(f.base, 'bin'); mkdirSync(bin); const path = join(bin, 'opencode');
-  writeFileSync(path, '#!/bin/sh\n[ "$1" = "--version" ] || exit 99\nprintf "1.14.50\\n"\n', { mode: 0o755 });
-  f.options.env.PATH = bin + ':' + process.env.PATH; f.options.options.target = 'opencode';
+  const env = withHostVersionFixtures(f.base, f.options.env, ['opencode']); f.options.env = env; f.rollback.env = env; f.options.options.target = 'opencode';
 }
 test('model A -> update -> config B -> rollback regenerates with verified previous renderer; reasoning-only edits reuse artifacts', async t => {
   const f = fixture(t); opencodeFixture(f); models(f, 'vendor/model-A'); const a = await apply(f, 'A'); await apply(f, 'B');
