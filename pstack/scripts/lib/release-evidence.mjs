@@ -1,11 +1,20 @@
 import assert from 'node:assert/strict';
 import { digest } from './installation-state.mjs';
 const repository = 'drewt5/cursor-plugins';
-const expected = {
+export const requiredPhases = {
   'portable-ubuntu-latest': ['unit'], 'portable-macos-latest': ['unit'], helpers: ['helpers'],
   'native-codex': ['setup', 'discovery', 'invocation'], 'native-opencode': ['setup', 'discovery', 'invocation'], 'native-claude-code': ['setup', 'discovery', 'invocation'],
 };
-const jobNames = ['Pstack host matrix', 'Pstack portable (ubuntu-latest)', 'Pstack portable (macos-latest)', 'Pstack helpers', 'Pstack native (codex)', 'Pstack native (opencode)', 'Pstack native (claude-code)', 'Pstack required'];
+export const requiredJobChecks = {
+  'Pstack host matrix': null,
+  'Pstack portable (ubuntu-latest)': 'portable-ubuntu-latest',
+  'Pstack portable (macos-latest)': 'portable-macos-latest',
+  'Pstack helpers': 'helpers',
+  'Pstack native (codex)': 'native-codex',
+  'Pstack native (opencode)': 'native-opencode',
+  'Pstack native (claude-code)': 'native-claude-code',
+  'Pstack required': null,
+};
 const phaseCommand = (check, phase) => phase === 'setup' ? ['node', 'pstack/scripts/install-host.mjs'] : phase === 'unit' || phase === 'helpers' ? ['node', 'pstack/scripts/test.mjs', '--' + phase] : ['node', `pstack/scripts/check-${phase === 'discovery' ? 'hosts' : 'invocation'}.mjs`, check.slice('native-'.length)];
 export function validateReleaseEvidence({ sourceCommit, run, jobs, reports, hosts, checkoutLog, runId, attempt }) {
   assert.match(sourceCommit, /^[a-f0-9]{40}$/, 'Select an exact candidate source commit');
@@ -15,14 +24,14 @@ export function validateReleaseEvidence({ sourceCommit, run, jobs, reports, host
   assert.equal(run.status, 'completed', 'Run is pending'); assert.equal(run.conclusion, 'success', 'Run did not pass');
   assert.ok(['push', 'pull_request', 'workflow_dispatch', 'merge_group'].includes(run.event), 'Advisory/scheduled evidence is not required baseline evidence');
   assert.equal(run.head_sha, sourceCommit, 'Run tested a different source commit');
-  assert.deepEqual(jobs.map(job => job.name).sort(), jobNames.slice().sort(), 'Missing/duplicated required jobs');
+  assert.deepEqual(jobs.map(job => job.name).sort(), Object.keys(requiredJobChecks).sort(), 'Missing/duplicated required jobs');
   for (const job of jobs) {
     assert.equal(String(job.run_id), String(runId), 'Job run ID mismatch'); assert.equal(job.run_attempt, attempt, 'Job attempt mismatch');
     assert.ok(Array.isArray(job.steps) && job.steps.length, 'Missing complete job step outcomes');
     assert.ok(job.steps.every(step => step.status === 'completed' && ['success', 'skipped'].includes(step.conclusion)), 'Failed/cancelled/incomplete job step');
     assert.equal(job.status, 'completed', `${job.name} pending`); assert.equal(job.conclusion, 'success', `${job.name} failed or skipped`);
   }
-  assert.deepEqual(reports.map(item => item.report.check).sort(), Object.keys(expected).sort(), 'Missing/duplicated required reports');
+  assert.deepEqual(reports.map(item => item.report.check).sort(), Object.keys(requiredPhases).sort(), 'Missing/duplicated required reports');
   const tested = new Set(), result = [];
   for (const { report, bytes, logs } of reports.sort((a, b) => a.report.check.localeCompare(b.report.check))) {
     assert.deepEqual(JSON.parse(bytes.toString()), report, 'Report digest input does not match parsed evidence');
@@ -32,7 +41,7 @@ export function validateReleaseEvidence({ sourceCommit, run, jobs, reports, host
     assert.equal(report.artifact, `pstack-${report.check}-${attempt}`, 'Artifact identity mismatch'); assert.equal(report.status, 'passed'); assert.deepEqual(report.failures, []);
     assert.match(report.testedSha, /^[a-f0-9]{40}$/); tested.add(report.testedSha);
     assert.ok(new RegExp('git log -1 --format=%H\\r?\\n[^\\n]*' + report.testedSha).test(checkoutLog), 'Missing checkout command evidence for tested SHA');
-    assert.deepEqual(report.phases.map(phase => phase.phase), expected[report.check], 'Incomplete phase coverage');
+    assert.deepEqual(report.phases.map(phase => phase.phase), requiredPhases[report.check], 'Incomplete phase coverage');
     const phases = report.phases.map(phase => {
       assert.equal(phase.status, 'passed'); assert.equal(phase.exitCode, 0); assert.equal(phase.signal, null); assert.equal(phase.error, null);
       for (const key of ['repository', 'event', 'runId', 'runAttempt', 'sourceHeadSha', 'testedSha', 'check', 'pullRequest']) assert.deepEqual(phase.identity[key], report[key], `Phase identity mismatch: ${key}`);

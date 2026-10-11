@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { prepareReleaseCandidate, supportedUpgradeBaseline } from '../scripts/release-candidate.mjs';
 import { digest } from '../scripts/lib/installation-state.mjs';
 import { compareUpstream } from '../scripts/lib/upstream-review.mjs';
+import { lifecycleFixture } from './fixtures/lifecycle-evidence.mjs';
 import { evidenceFixture } from './fixtures/release-evidence.mjs';
 const packageRoot = fileURLToPath(new URL('..', import.meta.url));
 function fixture(t) {
@@ -60,4 +61,33 @@ test('initial/previous baseline and clean CLI selection are explicit without pub
   assert.throws(() => supportedUpgradeBaseline(f.source, nextTag, prior, proof, { ...current, runAttempt: 2 }));
   const command = spawnSync(process.execPath, [join(packageRoot, 'scripts/release-candidate.mjs'), '--source', f.source, '--inspect-upstream'], { encoding: 'utf8' }); assert.equal(command.status, 0, command.stderr); assert.deepEqual(JSON.parse(command.stdout), f.comparison);
   const invalid = spawnSync(process.execPath, [join(packageRoot, 'scripts/release-candidate.mjs'), '--bogus'], { encoding: 'utf8' }); assert.equal(invalid.status, 1); assert.match(invalid.stderr, /Unknown/);
+});
+
+test('CLI lifecycle evidence validates deterministically and rejects bad costs without output or source changes', t => {
+  const f = fixture(t);
+  prepareReleaseCandidate(f.options);
+  const pending = JSON.parse(readFileSync(f.options.output));
+  assert.equal(pending.lifecycleGate.status, 'pending');
+  const proof = lifecycleFixture(pending.identity, pending.requiredEvidence, pending.upstreamReview);
+  const proofPath = join(f.root, 'lifecycle.json');
+  const cli = options => spawnSync(process.execPath, [join(packageRoot, 'scripts/release-candidate.mjs'), ...Object.entries(options).flatMap(([key, value]) => ['--' + key, value])], { encoding: 'utf8' });
+  const options = { ...f.options, 'lifecycle-evidence': proofPath, output: join(f.root, 'verified.json') };
+  writeFileSync(proofPath, JSON.stringify(proof));
+  let result = cli(options); assert.equal(result.status, 0, result.stderr);
+  const record = JSON.parse(readFileSync(options.output));
+  assert.equal(record.lifecycleGate.status, 'verified-for-maintainer-review');
+  assert.deepEqual(record.lifecycleGate.evidence, proof);
+  const repeated = { ...options, output: join(f.root, 'repeated.json') };
+  result = cli(repeated); assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(options.output, 'utf8'), readFileSync(repeated.output, 'utf8'));
+  for (const sample of ['current', 'baseline']) {
+    const bad = structuredClone(proof); bad.cost[sample].jobs = Array.from({ length: 8 }, () => ({}));
+    writeFileSync(proofPath, JSON.stringify(bad));
+    const rejected = { ...options, output: join(f.root, `rejected-${sample}.json`) };
+    result = cli(rejected); assert.equal(result.status, 1); assert.match(result.stderr, /cost jobs/);
+    assert.equal(existsSync(rejected.output), false);
+  }
+  assert.equal(f.git(['status', '--porcelain']), '');
+  assert.equal(f.git(['rev-parse', 'HEAD']), f.head);
+  assert.equal(f.git(['tag', '--list']), '');
 });
