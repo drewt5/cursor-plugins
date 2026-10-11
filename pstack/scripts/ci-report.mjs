@@ -45,6 +45,7 @@ async function run() {
   record.timing = `${phase}-timing`;
   rmSync(join(directory, record.timing), { recursive: true, force: true });
   mkdirSync(join(directory, record.timing), { recursive: true });
+  writeFileSync(join(directory, record.timing, `${process.pid}.jsonl`), JSON.stringify({ event: 'phase', offsetMs: 0, pid: process.pid, runtime: runtimeTiming() }) + '\n');
   const token = randomUUID();
   console.log(`::stop-commands::${token}`);
   const child = spawn(command[0], command.slice(1), { env: { ...env, PSTACK_TIMING_DIR: join(directory, record.timing), PSTACK_TIMING_ORIGIN: String(started), PSTACK_TIMING_SCOPE: phase }, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });

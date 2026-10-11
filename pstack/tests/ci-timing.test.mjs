@@ -16,7 +16,7 @@ function fixture(t) {
     run(phase, command, extra = {}) {
       return spawnSync(process.execPath, [reporter, 'run', phase, '--', ...command], { encoding: 'utf8', timeout: 15000, env: { ...process.env, NODE_TEST_CONTEXT: undefined, PSTACK_REPORT_DIR: directory, ...extra } });
     },
-    events(phase) { return readdirSync(join(directory, `${phase}-timing`)).flatMap(name => readFileSync(join(directory, `${phase}-timing`, name), 'utf8').trim().split('\n').map(JSON.parse)); },
+    events(phase) { return readdirSync(join(directory, `${phase}-timing`)).flatMap(name => readFileSync(join(directory, `${phase}-timing`, name), 'utf8').trim().split('\n').map(JSON.parse)).filter(event => event.event !== 'phase'); },
   };
 }
 test('real test children record overlapping process intervals and failure without replacing stdout', t => {
