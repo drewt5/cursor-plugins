@@ -37,3 +37,33 @@ The baseline is successful push run [38080504980](https://github.com/drewt5/curs
 The final record adds the final current-head sample, all eight job start/end/step intervals, each phase duration, and critical-path wall time. Pre-job wait includes runner queue and matrix dependency wait; setup/finalization/upload are separated from reported test execution. Samples differ in event and runner context and are operational evidence, not a controlled benchmark. The substantive added cost is exercised recovery/ownership/native scope behavior. Identical generation descriptors are verified once within each synchronous journal parse; later calls always revalidate current bytes, with no cross-operation cache. The compact fixture optimization removes unrelated library copying/hashing from repeated boundary tests without removing crash boundaries or native/full-package scenarios; it introduces no new job matrix, background benchmark or timeout relaxation.
 
 [Canary triage and promotion](ci.md#triage-provider-drift) remains advisory and separately classifies upstream drift, provider drift, user-install conflicts, infrastructure noise and unsupported native visibility. Required pinned checks alone supply baseline release proof. Use doctor for user installation facts and the source-bound release-candidate record for maintainer readiness. The final evidence records the actually observed latest-canary result, including intentional failure fixtures or pending runs; a past green advisory run is never promoted silently to a supported provider pin.
+
+## Storage fixture cost
+
+Issue #55 reduces preparation for five storage-only cases in [installation-storage.test.mjs](../tests/installation-storage.test.mjs). Each uses a real temporary source containing authoritative `release.json` bytes, `README.md`, a nested ordinary file, and an executable. Ordinary modes are explicitly `0o644`; the executable mode is `0o755`. Production `stagePackage`, inventory, provenance, and `verifyGeneration` still execute. No production code or package filtering changes.
+
+The baseline is `a5bc6ab358dd6268a2df25f99a8f56b00f375e86`; the measured fixture change is `86976ae`. Neither includes issue #54's production staging optimization. On Node v26.0.0, Darwin 25.6.0, 11 logical CPUs, the actual fixture inventory fell from 320 files and 4,058,531 bytes to 4 files and 160 bytes per storage-only source. Across the five cases, initial fixture preparation avoids 1,580 file copies and 20,291,855 payload bytes. Subsequent staging and verification also traverse the smaller real tree.
+
+The focused command was `node --test pstack/tests/installation-storage.test.mjs`. Each clean checkout received one warm-up and five measured runs, alternating baseline and changed checkout. All six tests passed in every run. Other agents paused test workloads for these samples. The observed system load before measurement was 7.48, 9.24, and 6.19 over 1, 5, and 15 minutes, so unrelated machine activity remains a possible influence.
+
+| Sample | Baseline seconds | Compact seconds |
+| --- | ---: | ---: |
+| Warm-up | 2.045619 | 0.787303 |
+| 1 | 2.042272 | 0.783251 |
+| 2 | 2.010245 | 0.775909 |
+| 3 | 2.041406 | 0.773639 |
+| 4 | 2.045206 | 0.751639 |
+| 5 | 1.987003 | 0.815055 |
+| Median excluding warm-up | 2.041406 | 0.775909 |
+
+A separate unreported Node CPU-profile run located the dominant sampled stacks in synchronous file operations. `openSync` accounted for 312.6ms of samples, `rmSync` for 312.3ms, `copyFileSync` for 211.2ms, and `readdirSync` for 197.0ms. Fixture `cpSync` and teardown `rmSync` traverse the full source, while inventory and staging open its files. These samples include blocking native calls and are not CPU-utilization or disk-bandwidth measurements. The reduced fixture removes those traversals for five cases; the full renderer and subprocess work remain.
+
+These elapsed samples describe this focused command, including process startup and cleanup. They do not establish a fixed runtime, whole-suite speedup, or CI critical-path improvement. File and byte counts establish the reduction in fixture preparation independently of wall-time noise. Required hosted phase, setup, queue, and critical-path evidence belongs to the PR's current-head verification.
+
+All original storage assertions remain. The compact cases cover exact inventory and reuse without activation; failed writes and copies, unsafe parents, and source symlinks; stored extras, symlinks, modes, and provenance; changed detached source metadata; and real FIFO rejection in a bounded subprocess. The full renderer case still checks all four targets, `poteto-mode` playbook links, generated OpenCode model agents, the retained release helper, relocation, and removal of the source checkout.
+
+Full-package anchors remain in project/global all-target lifecycle tests, public schema-1/2 migration and rollback, repair, relocation, uninstall, and public fresh/legacy interrupted recovery after checkout deletion. Rollback fixtures and their current-config behavior are unchanged. Recovery still exercises all 22 IPC boundaries. Pinned native discovery and mock invocation remain required, with their existing limits on model reasoning and Cursor GUI evidence. The job matrix, phase budgets, and commands are unchanged.
+
+The initial pre-edit baseline also passed one warm-up and three samples while other workers were active. Times were 2.180007s for warm-up, then 1.952877s, 1.916772s, and 1.918799s, with a 1.918799s median. Those crowded samples are retained as context and are not the comparison above.
+
+Local verification passed all 24 focused storage, rollback, and recovery tests, including 22 crash boundaries. `node pstack/scripts/test.mjs --unit` passed all 157 tests and confirmed that the source checkout was unchanged. Its test process took 47.030s; there is no paired whole-suite baseline.
