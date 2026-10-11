@@ -104,7 +104,7 @@ cd pstack-fork
 git fetch origin --tags
 pstack_candidate=REPLACE_WITH_EXACT_CANDIDATE_COMMIT
 git switch --detach "$pstack_candidate"
-node pstack/scripts/release.mjs
+node pstack/scripts/release.mjs --check
 node pstack/scripts/install.mjs --target codex --project /absolute/path/to/project
 ```
 
