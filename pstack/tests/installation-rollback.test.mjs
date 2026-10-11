@@ -1,3 +1,4 @@
+import { copyRuntimeSource } from './fixtures/runtime-source.mjs';
 import { withHostVersionFixtures } from './fixtures/host-versions.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,9 +12,11 @@ import { removeInstallation } from '../scripts/lib/installation-removal.mjs';
 import { recoverInstallation } from '../scripts/lib/installation-recovery.mjs';
 import { stateFrom } from '../scripts/lib/installation-state.mjs';
 const source = fileURLToPath(new URL('..', import.meta.url));
-function fixture(t) {
+function fixture(t, { fullPackage = false } = {}) {
   const base = mkdtempSync(join(tmpdir(), 'pstack-rollback-')); t.after(() => rmSync(base, { recursive: true, force: true }));
-  const root = join(base, 'project'), home = join(base, 'home'), candidate = join(base, 'source'); mkdirSync(root); mkdirSync(home); cpSync(source, candidate, { recursive: true });
+  const root = join(base, 'project'), home = join(base, 'home'), candidate = join(base, 'source'); mkdirSync(root); mkdirSync(home);
+  if (fullPackage) cpSync(source, candidate, { recursive: true });
+  else copyRuntimeSource(source, candidate);
   const env = { HOME: home, PATH: process.env.PATH, XDG_CONFIG_HOME: join(home, '.config') };
   const options = { source: candidate, root, globalRoot: home, options: { target: 'cursor' }, env };
   return { base, root, home, candidate, options, rollback: { root, globalRoot: home, env } };
@@ -21,7 +24,7 @@ function fixture(t) {
 const receipt = f => stateFrom(join(f.root, '.pstack/install.json'));
 async function apply(f, text) { if (text) writeFileSync(join(f.candidate, 'fixture-release.txt'), text); const prepared = await prepareStagedActivation(f.options); assert.equal(prepared.plan.conflicts.length, 0); assert.equal(prepared.failures.length, 0); const result = await applyStagedActivation(prepared); assert.equal(result.status, 'applied'); return receipt(f); }
 test('three updates retain only active and previous; rollback reuses exact adapters and preserves user content; full uninstall removes executable storage', async t => {
-  const f = fixture(t); const a = await apply(f, 'A'), b = await apply(f, 'B'), c = await apply(f, 'C');
+  const f = fixture(t, { fullPackage: true }); const a = await apply(f, 'A'), b = await apply(f, 'B'), c = await apply(f, 'C');
   assert.equal(c.previous.state.generation.digest, b.generation.digest); assert.equal(existsSync(join(f.root, a.generation.name)), false);
   assert.equal(readdirSync(join(f.root, '.pstack/releases')).filter(name => /^[a-f0-9]{64}$/.test(name)).length, 2);
   mkdirSync(join(f.root, '.cursor/skills/unrelated')); writeFileSync(join(f.root, '.cursor/skills/unrelated/SKILL.md'), 'user');

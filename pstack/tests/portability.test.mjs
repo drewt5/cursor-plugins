@@ -1,3 +1,4 @@
+import { copyRuntimeSource } from './fixtures/runtime-source.mjs';
 import { installLegacy } from './fixtures/legacy-installation.mjs';
 import { withHostVersionFixtures } from './fixtures/host-versions.mjs';
 import test, { after } from 'node:test';
@@ -13,15 +14,16 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const fakeRoot = mkdtempSync(join(tmpdir(), 'pstack-versions-'));
 after(() => rmSync(fakeRoot, { recursive: true, force: true }));
 const fakeEnv = withHostVersionFixtures(fakeRoot, process.env);
-const installer = join(root, 'scripts/install.mjs');
+const runtimeSource = copyRuntimeSource(root, join(fakeRoot, 'source'));
+const installer = join(runtimeSource, 'scripts/install.mjs');
 const skills = readdirSync(join(root, 'skills')).sort();
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'pstack port '));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
-function install(dir, target = 'all', args = []) {
-  return spawnSync(process.execPath, [installer, '--target', target, '--project', dir, ...args], { encoding: 'utf8', env: { ...fakeEnv, XDG_CONFIG_HOME: join(dir, 'config') } });
+function install(dir, target = 'all', args = [], selectedSource = runtimeSource) {
+  return spawnSync(process.execPath, [join(selectedSource, 'scripts/install.mjs'), '--target', target, '--project', dir, ...args], { encoding: 'utf8', env: { ...fakeEnv, XDG_CONFIG_HOME: join(dir, 'config') } });
 }
 function ok(result) { assert.equal(result.status, 0, result.stderr); }
 
@@ -43,7 +45,7 @@ test('every skill has a portable name, description, and reachable runtime contra
 for (const target of ['codex', 'opencode', 'claude-code', 'cursor', 'all']) {
   test(`${target} install discovers every skill and preserves relative resources`, t => {
     const dir = fixture(t);
-    ok(install(dir, target));
+    ok(install(dir, target, [], root));
     assert.ok(!existsSync(join(dir, '.pstack/package/cursor-team-kit')));
     assert.ok(!existsSync(join(dir, '.pstack/package/.claude-plugin/marketplace.json')));
     const locations = target === 'all' ? ['.agents', '.claude', '.opencode'] : [target === 'claude-code' ? '.claude' : target === 'cursor' ? '.cursor' : target === 'opencode' ? '.opencode' : '.agents'];
@@ -60,10 +62,10 @@ for (const target of ['codex', 'opencode', 'claude-code', 'cursor', 'all']) {
       assert.match(readFileSync(join(dir, '.opencode/agents/poteto-agent.md'), 'utf8'), /mode: subagent/);
     }
     const before = readFileSync(join(dir, '.pstack/install.json'), 'utf8');
-    ok(install(dir, target));
+    ok(install(dir, target, [], root));
     assert.equal(readFileSync(join(dir, '.pstack/install.json'), 'utf8'), before);
     writeFileSync(join(dir, '.pstack/models.json'), '{"version":1,"roles":{}}');
-    ok(install(dir, target, ['--uninstall']));
+    ok(install(dir, target, ['--uninstall'], root));
     assert.ok(existsSync(join(dir, '.pstack/models.json')));
     assert.ok(!existsSync(join(dir, locations[0], 'skills/poteto-mode')));
   });
@@ -148,7 +150,7 @@ test('global installation uses user skill roots and the OpenCode config director
 });
 
 test('installer rejects a destination inside its own source tree', () => {
-  const result = install(root);
+  const result = install(root, 'all', [], root);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /outside the pstack source/);
 });

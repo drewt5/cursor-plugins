@@ -1,4 +1,5 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
+import { copyRuntimeSource } from './fixtures/runtime-source.mjs';
 import assert from 'node:assert/strict';
 import { cpSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,18 +9,22 @@ import { spawnSync } from 'node:child_process';
 import { installLegacy } from './fixtures/legacy-installation.mjs';
 import { stateFrom, digest } from '../scripts/lib/installation-state.mjs';
 const source = fileURLToPath(new URL('..', import.meta.url));
-function fixture(t) {
+const runtimeDirectory = mkdtempSync(join(tmpdir(), 'pstack-public-source-'));
+after(() => rmSync(runtimeDirectory, { recursive: true, force: true }));
+const runtimeSource = copyRuntimeSource(source, join(runtimeDirectory, 'source'));
+function fixture(t, { fullPackage = false } = {}) {
+  const selectedSource = fullPackage ? source : runtimeSource;
   const base = mkdtempSync(join(tmpdir(), 'pstack-public-')); t.after(() => rmSync(base, { recursive: true, force: true }));
   const root = join(base, 'project'), home = join(base, 'home'); mkdirSync(root); mkdirSync(home);
   const env = { HOME: home, PATH: process.env.PATH, XDG_CONFIG_HOME: join(home, '.config') };
-  const run = (script = 'install', args = []) => spawnSync(process.execPath, [join(source, 'scripts', script + '.mjs'), '--project', root, ...args], { env, encoding: 'utf8' });
-  return { base, root, home, env, run };
+  const run = (script = 'install', args = []) => spawnSync(process.execPath, [join(selectedSource, 'scripts', script + '.mjs'), '--project', root, ...args], { env, encoding: 'utf8' });
+  return { base, root, home, env, run, source: selectedSource };
 }
 function tree(path) { return readdirSync(path).sort().flatMap(name => { const file = join(path, name), stat = lstatSync(file); return [[file, stat.mode & 0o777, stat.isSymbolicLink() ? readlinkSync(file) : stat.isFile() ? digest(readFileSync(file)) : 'directory'], ...(stat.isDirectory() ? tree(file) : [])]; }); }
 const ok = result => assert.equal(result.status, 0, result.stderr);
 test('public schema 1/2 migration, rollback, repair, relocation and uninstall preserve config/user skills without receipt edits', t => {
   for (const schema of [1, 2]) {
-    const f = fixture(t); installLegacy({ source, root: f.root, schema });
+    const f = fixture(t, { fullPackage: schema === 2 }); installLegacy({ source: f.source, root: f.root, schema });
     mkdirSync(join(f.root, '.cursor/skills/user-skill')); writeFileSync(join(f.root, '.cursor/skills/user-skill/SKILL.md'), 'unrelated');
     const cfg = '{"version":2,"future":"settings unrelated to Cursor adapters"}'; writeFileSync(join(f.root, '.pstack/models.json'), cfg);
     const before = tree(f.root); ok(f.run('install', ['--dry-run'])); assert.deepEqual(tree(f.root), before);
@@ -27,12 +32,12 @@ test('public schema 1/2 migration, rollback, repair, relocation and uninstall pr
     ok(f.run('rollback')); assert.equal(readFileSync(join(f.root, '.pstack/models.json'), 'utf8'), cfg);
     ok(f.run()); rmSync(join(f.root, '.cursor/skills/poteto-mode')); ok(f.run()); assert.match(readFileSync(join(f.root, '.cursor/skills/poteto-mode/SKILL.md'), 'utf8'), /Non-negotiables/);
     const relocated = join(f.base, 'relocated'); renameSync(f.root, relocated);
-    const removal = spawnSync(process.execPath, [join(source, 'scripts/uninstall.mjs'), '--project', relocated], { env: f.env, encoding: 'utf8' }); ok(removal);
+    const removal = spawnSync(process.execPath, [join(f.source, 'scripts/uninstall.mjs'), '--project', relocated], { env: f.env, encoding: 'utf8' }); ok(removal);
     assert.equal(readFileSync(join(relocated, '.pstack/models.json'), 'utf8'), cfg); assert.equal(readFileSync(join(relocated, '.cursor/skills/user-skill/SKILL.md'), 'utf8'), 'unrelated'); assert.equal(readdirSync(join(relocated, '.pstack')).includes('releases'), false);
   }
 });
 test('legacy edited files, unowned additions and host conflicts are all listed before any scope mutation', t => {
-  const f = fixture(t); installLegacy({ source, root: f.root });
+  const f = fixture(t); installLegacy({ source: f.source, root: f.root });
   for (const name of ['README.md', 'package.json']) writeFileSync(join(f.root, '.pstack/package', name), 'user edit');
   mkdirSync(join(f.root, '.pstack/package/user-directory')); writeFileSync(join(f.root, '.pstack/package/user-directory/keep.txt'), 'user'); writeFileSync(join(f.root, '.cursor/agents/poteto-agent.md'), 'edited host');
   const before = tree(f.root); const result = f.run(); assert.equal(result.status, 1);
@@ -40,7 +45,7 @@ test('legacy edited files, unowned additions and host conflicts are all listed b
   assert.deepEqual(tree(f.root), before); assert.equal(readdirSync(join(f.root, '.pstack')).includes('releases'), false);
 });
 test('unchanged legacy full uninstall takes the transaction path and removes captured executable packages', t => {
-  const f = fixture(t); installLegacy({ source, root: f.root }); ok(f.run('uninstall'));
+  const f = fixture(t, { fullPackage: true }); installLegacy({ source: f.source, root: f.root }); ok(f.run('uninstall'));
   assert.equal(stateFrom(join(f.root, '.pstack/install.json')).targets.length, 0); assert.equal(readdirSync(f.root).includes('.pstack'), false);
 });
 test('public fresh and legacy operations killed after stable transition recover from exact retained command with source deleted and stale lock', { timeout: 20000 }, async t => {
@@ -62,6 +67,6 @@ test('public fresh and legacy operations killed after stable transition recover 
 });
 test('public mandatory discovery failure restores an absent installation with only its unchanged new artifacts removed', async t => {
   const f = fixture(t), { applyPublicInstallation } = await import('../scripts/lib/installation-public.mjs');
-  const result = await applyPublicInstallation({ source, root: f.root, globalRoot: f.home, env: f.env, options: { target: 'cursor' } }, { diagnose: async () => ({ findings: [], discovery: { status: 'failed', probes: [{ host: 'cursor', status: 'failed' }] } }) });
+  const result = await applyPublicInstallation({ source: f.source, root: f.root, globalRoot: f.home, env: f.env, options: { target: 'cursor' } }, { diagnose: async () => ({ findings: [], discovery: { status: 'failed', probes: [{ host: 'cursor', status: 'failed' }] } }) });
   assert.equal(result.status, 'verification-failed-restored'); assert.equal(result.restored, true); assert.equal(stateFrom(join(f.root, '.pstack/install.json')).targets.length, 0); assert.equal(readdirSync(f.root).includes('.cursor'), false);
 });
