@@ -12,7 +12,7 @@ function snapshot(root, prefix = '') {
     return [[name, stat.isSymbolicLink() ? 'link:' + readlinkSync(path) : `${stat.mode & 0o777}:${createHash('sha256').update(readFileSync(path)).digest('hex')}`]];
   }));
 }
-export async function characterizeDiscoverySafety({ temporary, project, env, row, expected, bundles }) {
+export async function characterizeDiscoverySafety({ temporary, project, env, row, expected, bundles, signal }) {
   assert.ok(project.startsWith(temporary + '/') && env.HOME.startsWith(temporary + '/'), 'Safety characterization requires a caller-owned temporary environment');
   const marker = join(temporary, 'sentinel-executed');
   const sentinel = join(temporary, 'sentinel.mjs'); writeFileSync(sentinel, `import {writeFileSync} from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'executed');\n`);
@@ -27,7 +27,7 @@ export async function characterizeDiscoverySafety({ temporary, project, env, row
   assert.equal(version.evidence.actualVersion, process.env.PSTACK_HOST_VERSION || row.version, JSON.stringify(version));
   assert.deepEqual(snapshot(temporary), before, 'Version probe changed the supplied user scope');
   const versionProbe = { actualVersion: version.evidence.actualVersion, environment: version.evidence.environment, requestedStateUnchanged: true };
-  const options = { host: row.host, executable: row.executable, project, scope: 'project', env, expected, bundles, actualVersion: process.env.PSTACK_HOST_VERSION || row.version };
+  const options = { signal, host: row.host, executable: row.executable, project, scope: 'project', env, expected, bundles, actualVersion: process.env.PSTACK_HOST_VERSION || row.version };
   const automatic = await inspectNativeDiscovery(options);
   assert.equal(automatic.status, 'unavailable'); assert.deepEqual(snapshot(temporary), before, 'Automatic existing-scope discovery wrote or executed a sentinel');
   const observed = await inspectNativeDiscovery({ ...options, environmentOwnership: 'isolated-test' });
