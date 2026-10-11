@@ -96,60 +96,140 @@ export function buildActivationJournal(prepared) {
 }
 export async function applyActivationUnderLock(prepared, { boundary = async () => {}, diagnose = inspectExistingInstallation } = {}) {
   const journal = buildActivationJournal(prepared);
-  if (!journal) return { status: 'unchanged', changed: false };
+  if (!journal) {
+    return { status: 'unchanged', changed: false };
+  }
   const { root } = prepared;
   journal.recoveryInstruction = recoveryCommand(root, journal);
   persistJournal(root, journal);
   writeFileSync(safePath(root, instructionName), journal.recoveryInstruction + '\n', { flag: 'wx', mode: 0o600 });
   console.log(`Recovery if interrupted: ${journal.recoveryInstruction}`);
   await boundary('prepared', journal);
-  journal.state = 'applying'; persistJournal(root, journal); await boundary('applying', journal);
-  for (const [index, directory] of journal.createdDirectories.entries()) { mkdirSync(directory); await boundary(`directory:${index}`, journal); }
-  for (const [index, op] of journal.operations.entries()) {
-    pathFor(root, op.name, op.name === '.pstack/install.json' || op.after.kind !== 'absent' ? journal.intendedReceipt : journal.priorReceipt);
-    if (op.kind === 'legacy-directory') applyLegacyMove(root, journal, op, 'after'); else await applyJournalImage(op, 'after', journal.id, () => boundary(`temporary:${index}`, journal)); await boundary(`mutation:${index}`, journal);
-    journal.progress = index + 1; persistJournal(root, journal); await boundary(`progress:${index}`, journal);
+  journal.state = 'applying';
+  persistJournal(root, journal);
+  await boundary('applying', journal);
+  for (const [index, directory] of journal.createdDirectories.entries()) {
+    mkdirSync(directory);
+    await boundary(`directory:${index}`, journal);
   }
-  journal.state = 'verifying'; persistJournal(root, journal); await boundary('verifying', journal);
+  for (const [index, op] of journal.operations.entries()) {
+    pathFor(
+      root,
+      op.name,
+      op.name === '.pstack/install.json' || op.after.kind !== 'absent' ? journal.intendedReceipt : journal.priorReceipt
+    );
+    if (op.kind === 'legacy-directory') {
+      applyLegacyMove(root, journal, op, 'after');
+    } else {
+      await applyJournalImage(op, 'after', journal.id, () => boundary(`temporary:${index}`, journal));
+    }
+    await boundary(`mutation:${index}`, journal);
+    journal.progress = index + 1;
+    persistJournal(root, journal);
+    await boundary(`progress:${index}`, journal);
+  }
+  journal.state = 'verifying';
+  persistJournal(root, journal);
+  await boundary('verifying', journal);
   let report;
-  try { report = await diagnose({ ...prepared.diagnosticOptions, targets: prepared.targets, operationId: journal.id }); }
-  catch (error) { journal.failure = { code: 'DIAGNOSTIC_EXECUTION_FAILED', error: error.message }; persistJournal(root, journal); const recovery = await recoverUnderLock(root, { boundary }); return { status: 'verification-failed-restored', changed: true, restored: recovery.restored, failure: journal.failure, operation: journal.id }; }
+  try {
+    report = await diagnose({ ...prepared.diagnosticOptions, targets: prepared.targets, operationId: journal.id });
+  } catch (error) {
+    journal.failure = { code: 'DIAGNOSTIC_EXECUTION_FAILED', error: error.message };
+    persistJournal(root, journal);
+    const recovery = await recoverUnderLock(root, { boundary });
+    return {
+      status: 'verification-failed-restored',
+      changed: true,
+      restored: recovery.restored,
+      failure: journal.failure,
+      operation: journal.id
+    };
+  }
   if (report.findings.some(item => item.severity === 'error') || mandatoryDiscoveryFailures(report).length) {
-    journal.failure = { code: 'POST_ACTIVATION_FAILED', findings: report.findings, discovery: report.discovery }; persistJournal(root, journal);
+    journal.failure = { code: 'POST_ACTIVATION_FAILED', findings: report.findings, discovery: report.discovery };
+    persistJournal(root, journal);
     const recovery = await recoverUnderLock(root, { boundary });
     return { status: 'verification-failed-restored', changed: true, restored: recovery.restored, report, operation: journal.id };
   }
-  journal.state = 'committed'; persistJournal(root, journal); await boundary('committed', journal);
-  cleanupJournalMetadata(root, journal); await boundary('cleanup', journal);
+  journal.state = 'committed';
+  persistJournal(root, journal);
+  await boundary('committed', journal);
+  cleanupJournalMetadata(root, journal);
+  await boundary('cleanup', journal);
   return { status: 'applied', changed: true, report, operation: journal.id };
 }
 export async function applyStagedActivation(prepared, options) {
-  const result = await withInstallationMutation({ root: prepared.root, opencodeRoots: mutationRoots(prepared) }, () => applyActivationUnderLock(prepared, options));
-  if (result.operation) { try { await withInstallationMutation({ root: prepared.root }, () => { finishJournalCleanup(prepared.root, result.operation); result.cleanup = cleanupReleases(prepared.root); }); } catch (error) { result.cleanupPending = true; result.cleanupError = error.message; } }
+  const result = await withInstallationMutation({ root: prepared.root, opencodeRoots: mutationRoots(prepared) }, () =>
+    applyActivationUnderLock(prepared, options)
+  );
+  if (result.operation) {
+    try {
+      await withInstallationMutation({ root: prepared.root }, () => {
+        finishJournalCleanup(prepared.root, result.operation);
+        result.cleanup = cleanupReleases(prepared.root);
+      });
+    } catch (error) {
+      result.cleanupPending = true;
+      result.cleanupError = error.message;
+    }
+  }
   return result;
 }
 
 export async function runStagedInstallation(options, controls = {}) {
-  const root = canonicalPath(options.root), unfinished = readActivationJournal(root);
-  const configured = options.opencodeRootOverride ? resolve(root, options.opencodeRootOverride) : options.options?.global ? resolve(options.env?.XDG_CONFIG_HOME || join(root, '.config'), 'opencode') : join(root, '.opencode');
+  const root = canonicalPath(options.root);
+  const unfinished = readActivationJournal(root);
+  let configured;
+  if (options.opencodeRootOverride) {
+    configured = resolve(root, options.opencodeRootOverride);
+  } else if (options.options?.global) {
+    configured = resolve(options.env?.XDG_CONFIG_HOME || join(root, '.config'), 'opencode');
+  } else {
+    configured = join(root, '.opencode');
+  }
   const previous = unfinished?.priorReceipt ?? stateFrom(safePath(root, '.pstack/install.json'));
   const recorded = Object.keys(previous.entries).some(name => name.startsWith('@opencode/')) ? [resolve(root, previous.opencodeRoot)] : [];
-  const needsConfigured = ['opencode', 'all'].includes(options.options?.target) || previous.targets.includes('opencode') || options.options?.target === undefined && !previous.targets.length;
+  const needsConfigured =
+    ['opencode', 'all'].includes(options.options?.target) ||
+    previous.targets.includes('opencode') ||
+    (options.options?.target === undefined && !previous.targets.length);
   const roots = [...(unfinished ? journalMutationRoots(root, unfinished) : []), ...recorded, ...(needsConfigured ? [configured] : [])];
   const result = await withInstallationMutation({ root, opencodeRoots: roots }, async () => {
     const recovered = await recoverUnderLock(root, controls);
-    if (recovered.operation) finishJournalCleanup(root, recovered.operation);
+    if (recovered.operation) {
+      finishJournalCleanup(root, recovered.operation);
+    }
     const prepared = await prepareStagedActivation(options);
-    if (!prepared.plan || prepared.plan.conflicts.length || prepared.failures.length || prepared.discoveryFailures.length) return { status: 'preflight-failed', prepared, recovered, changed: false };
-    try { return { ...await applyActivationUnderLock(prepared, controls), recovered, prepared }; }
-    catch (error) {
+    if (!prepared.plan || prepared.plan.conflicts.length || prepared.failures.length || prepared.discoveryFailures.length) {
+      return { status: 'preflight-failed', prepared, recovered, changed: false };
+    }
+    try {
+      return { ...(await applyActivationUnderLock(prepared, controls)), recovered, prepared };
+    } catch (error) {
       if (readActivationJournal(root)?.state !== 'committed') {
-        try { const restored = await recoverUnderLock(root); if (restored.restored) error.message += '; prior installation restored'; }
-        catch (recoveryError) { error.message += '; recovery required: ' + recoveryError.message; }
+        try {
+          const restored = await recoverUnderLock(root);
+          if (restored.restored) {
+            error.message += '; prior installation restored';
+          }
+        } catch (recoveryError) {
+          error.message += '; recovery required: ' + recoveryError.message;
+        }
       }
       throw error;
     }
   });
-  if (result.operation) { try { await withInstallationMutation({ root }, () => { finishJournalCleanup(root, result.operation); result.cleanup = cleanupReleases(root); }); } catch (error) { result.cleanupPending = true; result.cleanupError = error.message; } }
+  if (result.operation) {
+    try {
+      await withInstallationMutation({ root }, () => {
+        finishJournalCleanup(root, result.operation);
+        result.cleanup = cleanupReleases(root);
+      });
+    } catch (error) {
+      result.cleanupPending = true;
+      result.cleanupError = error.message;
+    }
+  }
   return result;
 }
