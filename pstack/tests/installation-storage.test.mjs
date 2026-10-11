@@ -182,3 +182,30 @@ test('missing inventory with matching ownership still rejects edited payload byt
   assert.equal(existsSync(inventory), false);
   assert.equal(readFileSync(payload, 'utf8'), 'user edit');
 });
+
+test('reuse rejects a source edit during provenance Git queries', t => {
+  const { source, root } = fixture(t);
+  const first = stagePackage({ source, root });
+  const storage = new URL('../scripts/lib/installation-storage.mjs', import.meta.url).href;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import cp from 'node:child_process';
+    import { writeFileSync } from 'node:fs';
+    import { syncBuiltinESMExports } from 'node:module';
+    const original = cp.spawnSync;
+    let changed = false;
+    cp.spawnSync = function (...args) {
+      if (!changed && args[0] === 'git') {
+        changed = true;
+        writeFileSync(${JSON.stringify(join(source, 'README.md'))}, 'edited during provenance');
+      }
+      return original.apply(this, args);
+    };
+    syncBuiltinESMExports();
+    const { stagePackage } = await import(${JSON.stringify(storage)});
+    stagePackage(${JSON.stringify({ source, root })});
+  `], { encoding: 'utf8', timeout: 5000 });
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /Retained inventory differs from package identity/);
+  assert.equal(readFileSync(join(source, 'README.md'), 'utf8'), 'edited during provenance');
+  assert.equal(readFileSync(join(root, first.name, 'README.md'), 'utf8'), 'Storage fixture\n');
+});
