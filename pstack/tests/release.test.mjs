@@ -15,7 +15,7 @@ function fixture(t) {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const pkg = join(dir, 'pstack');
   mkdirSync(pkg);
-  for (const file of ['release.json', ...files, 'scripts/release.mjs', 'scripts/test.mjs', 'scripts/lib/test-environment.mjs']) {
+  for (const file of ['release.json', ...files, 'scripts/release.mjs', 'scripts/test.mjs', 'scripts/lib/test-environment.mjs', 'scripts/lib/ci-timing.mjs']) {
     mkdirSync(dirname(join(pkg, file)), { recursive: true });
     cpSync(join(root, file), join(pkg, file));
   }

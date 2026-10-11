@@ -45,9 +45,9 @@ export async function inspectNativeDiscovery({ host, executable, project, scope,
       if (!entry || !Array.isArray(entry.skills) || !Array.isArray(entry.errors) || entry.errors.length) throw new Error('Codex returned an invalid catalog or skill-loading errors');
       entries = entry.skills.map(skill => ({ name: skill.name, path: skill.path }));
     } else {
-      entries = JSON.parse(await discoveryCommand(executable, ['--pure', 'debug', 'skill'], { project, env, timeout })).map(skill => ({ name: skill.name, path: skill.location }));
+      entries = JSON.parse(await discoveryCommand(executable, ['--pure', 'debug', 'skill'], { project, env, timeout, timingName: 'opencode debug skill' })).map(skill => ({ name: skill.name, path: skill.location }));
       for (const name of agents) {
-        const agent = JSON.parse(await discoveryCommand(executable, ['--pure', 'debug', 'agent', name], { project, env, timeout }));
+        const agent = JSON.parse(await discoveryCommand(executable, ['--pure', 'debug', 'agent', name], { project, env, timeout, timingName: 'opencode debug agent' }));
         if (agent.name !== name || agent.mode !== 'subagent') throw new Error(`Missing or malformed agent: ${name}`);
         result.agents.push({ name, mode: agent.mode, model: agent.model ?? null });
       }
@@ -58,8 +58,8 @@ export async function inspectNativeDiscovery({ host, executable, project, scope,
 
 export async function inspectClaudePlugin({ executable, source, project, env, timeout = 20000, environmentOwnership }) {
   if (environmentOwnership !== 'isolated-test') return { status: 'unavailable', method: 'native-plugin-inventory', reason: 'Plugin validation/inventory startup is only enabled in an isolated test environment.' };
-  await discoveryCommand(executable, ['plugin', 'validate', source], { project, env, timeout });
-  const body = await discoveryCommand(executable, ['--plugin-dir', source, 'plugin', 'details', 'pstack'], { project, env, timeout });
+  await discoveryCommand(executable, ['plugin', 'validate', source], { project, env, timeout, timingName: 'claude plugin validate' });
+  const body = await discoveryCommand(executable, ['--plugin-dir', source, 'plugin', 'details', 'pstack'], { project, env, timeout, timingName: 'claude plugin details' });
   const skills = body.match(/^\s+Skills \(\d+\)\s+(.+)$/m), agents = body.match(/^\s+Agents \(\d+\)\s+(.+)$/m);
   if (!skills || !agents) throw new Error('Malformed Claude native plugin inventory');
   return { status: 'observed', method: 'native-plugin-inventory', skills: skills[1].split(', '), agents: agents[1].split(', '), standaloneDiscovery: 'unavailable' };

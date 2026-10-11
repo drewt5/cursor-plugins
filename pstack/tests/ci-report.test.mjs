@@ -1,7 +1,7 @@
 import { loadHosts } from '../scripts/lib/tested-hosts.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +27,13 @@ test('report and summary preserve identity, command, version, and successful evi
   assert.equal(f.run(['finalize', 'discovery'], { PSTACK_HOST: 'codex', PSTACK_HOST_VERSION: '1.2.3' }).status, 0);
   const report = f.read('report.json');
   assert.equal(report.status, 'passed');
+  assert.equal(report.runtime.node, process.version);
+  assert.equal(report.runtime.architecture, process.arch);
+  assert.ok(report.runtime.availableParallelism >= 1);
+  const timingDirectory = join(f.directory, report.phases[0].timing);
+  const timing = JSON.parse(readFileSync(join(timingDirectory, readdirSync(timingDirectory)[0]), 'utf8'));
+  assert.equal(timing.event, 'phase');
+  assert.deepEqual(timing.runtime, report.runtime);
   assert.equal(report.repository, 'owner/repo');
   assert.equal(report.pullRequest, 123);
   assert.equal(report.runId, '456');
