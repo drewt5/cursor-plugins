@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { classifyScopeCatalog } from '../scripts/lib/scope-contracts.mjs';
+import { classifyScopeCatalog, assertScopeObservation, assertIndependentOrigin } from '../scripts/lib/scope-contracts.mjs';
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'pstack-catalog-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -55,3 +55,56 @@ function cursorFixture(root) {
   const run = args => spawnSync(process.execPath, [fileURLToPath(installer), '--target', 'cursor', ...args], { env, encoding: 'utf8', timeout: 15000 });
   return { env, project, run };
 }
+
+test('pinned scope assertions reject changed native classification and origins', t => {
+  const f = fixture(t);
+  const entries = f.entries.flat();
+  const result = { status: 'observed', ...classifyScopeCatalog(entries, f.expected, f.bundles) };
+  const check = result => assertScopeObservation({ host: 'codex', scenario: 'both-scopes', result, expected: f.expected, bundles: f.bundles });
+  check(result);
+  assert.throws(() => check({ ...result, classification: 'identified-source' }));
+  assert.throws(() => check({ ...result, entries: result.entries.slice(1) }));
+});
+
+test('OpenCode both-scope assertions accept observed project and mixed catalogs, reject corrupt evidence', t => {
+  const f = fixture(t), bare = f.entries.map(entries => entries.map(entry => ({ ...entry, name: entry.name.replace('pstack:', '') })));
+  const observation = entries => ({ status: 'observed', ...classifyScopeCatalog(entries, f.expected, f.bundles) });
+  const check = result => assertScopeObservation({ host: 'opencode', scenario: 'both-scopes', result, expected: f.expected, bundles: f.bundles });
+  const project = observation(bare[0]), mixed = observation([bare[0][0], bare[1][1]]);
+  check(project); check(mixed);
+  for (const result of [
+    { ...project, classification: 'ambiguous-sources' },
+    { ...mixed, classification: 'identified-source' },
+    { ...project, entries: project.entries.slice(1) },
+    { ...project, entries: [...project.entries, project.entries[0]] },
+    { ...project, entries: [{ ...project.entries[0], origin: project.entries[1].origin }, project.entries[1]] },
+    { ...project, entries: [{ ...project.entries[0], origin: '/unknown/SKILL.md' }, project.entries[1]] },
+    { ...project, coherentBundle: f.bundles[1] },
+    { ...mixed, completeBundles: project.completeBundles },
+    { ...project, missing: ['one'] },
+    { ...project, unexpected: ['other'] },
+    { ...project, independentIdentities: ['one'] },
+    observation(bare[1]),
+  ]) assert.throws(() => check(result));
+});
+test('independent-name assertions prove exact project origins and preserve raw classification', t => {
+  const f = fixture(t), independent = join(f.root, 'independent.md'); writeFileSync(independent, 'independent');
+  f.expected.push('poteto-mode');
+  const poteto = join(f.bundles[0], 'skills/poteto-mode/SKILL.md'); mkdirSync(join(f.bundles[0], 'skills/poteto-mode')); writeFileSync(poteto, 'poteto');
+  f.entries[0].push({ name: 'pstack:poteto-mode', path: poteto });
+  for (const host of ['codex', 'opencode']) {
+    const entries = f.entries[0].map(entry => ({ ...entry, name: host === 'codex' ? entry.name : entry.name.replace('pstack:', '') }));
+    if (host === 'codex') entries.push({ name: 'poteto-mode', path: independent });
+    const result = { status: 'observed', ...classifyScopeCatalog(entries, f.expected, [f.bundles[0]]) };
+    const before = structuredClone(result);
+    const check = result => assertScopeObservation({ host, scenario: 'independent-same-name', result, expected: f.expected, bundles: [f.bundles[0]], independent });
+    check(result); assert.deepEqual(result, before);
+    assert.throws(() => check({ ...result, classification: 'conflicting-registration' }));
+    assert.throws(() => check({ ...result, entries: result.entries.map((entry, index) => index ? entry : { ...entry, origin: independent }) }));
+  }
+  const check = entries => assertIndependentOrigin(entries, independent);
+  check([{ name: 'poteto-mode', location: independent }]);
+  assert.throws(() => check([]));
+  assert.throws(() => check([{ name: 'poteto-mode', location: f.entries[0][0].path }]));
+  assert.throws(() => check([{ name: 'poteto-mode', location: independent }, { name: 'poteto-mode', location: independent }]));
+});

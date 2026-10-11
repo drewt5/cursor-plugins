@@ -11,6 +11,50 @@ import { characterizeDiscoverySafety } from './discovery-safety-check.mjs';
 import { loadHosts } from './tested-hosts.mjs';
 
 export const classifyScopeCatalog = classifyDiscoveryCatalog;
+// Assertions for the pinned native fixture; policy must not rewrite observations.
+export function assertScopeObservation({ host, scenario, result, expected, bundles, independent }) {
+  const label = `${host} ${scenario}`;
+  assert.equal(result.status, 'observed', label);
+  const canonical = bundles.map(bundle => realpathSync(bundle));
+  const ordered = entries => entries.map(entry => JSON.stringify(entry)).sort();
+  const entry = (name, bundle) => ({ name: host === 'codex' ? `pstack:${name}` : name, origin: join(bundle, 'skills', name, 'SKILL.md') });
+  let wanted = expected.map(name => entry(name, canonical[0]));
+  let classification = 'identified-source', completeBundles = [canonical[0]], coherentBundle = canonical[0];
+  const independentIdentities = [];
+  if (scenario === 'both-scopes' && host === 'codex') {
+    wanted = canonical.flatMap(bundle => expected.map(name => entry(name, bundle)));
+    classification = 'ambiguous-sources'; completeBundles = canonical; coherentBundle = null;
+  } else if (scenario === 'both-scopes' && host === 'opencode') {
+    // Pinned OpenCode scans can select either project-only or mixed origins.
+    // All-global resolution has not been observed in this fixture baseline.
+    wanted = expected.map(name => {
+      const matches = result.entries.filter(item => item.name === name);
+      assert.equal(matches.length, 1, `${label}: exactly one ${name}`);
+      assert.ok(canonical.some(bundle => matches[0].origin === entry(name, bundle).origin), `${label}: unexpected origin for ${name}`);
+      return matches[0];
+    });
+    const projectCount = wanted.filter(item => item.origin === entry(item.name, canonical[0]).origin).length;
+    assert.ok(projectCount > 0, `${label}: unobserved all-global resolution`);
+    if (projectCount !== expected.length) { classification = 'ambiguous-sources'; completeBundles = []; coherentBundle = null; }
+  }
+  if (scenario === 'independent-same-name' && host === 'codex') {
+    wanted.push({ name: 'poteto-mode', origin: realpathSync(independent) });
+    independentIdentities.push('poteto-mode');
+  }
+  assert.deepEqual(ordered(result.entries), ordered(wanted), `${label}: identities and exact origins`);
+  assert.equal(result.classification, classification, `${label}: classification`);
+  assert.equal(result.coherentBundle, coherentBundle, `${label}: coherent bundle`);
+  assert.deepEqual([...result.completeBundles].sort(), [...completeBundles].sort(), `${label}: complete bundles`);
+  assert.deepEqual(result.missing, [], `${label}: missing identities`);
+  assert.deepEqual(result.unexpected, [], `${label}: unexpected identities`);
+  assert.deepEqual(result.independentIdentities, independentIdentities, `${label}: independent identities`);
+}
+
+export function assertIndependentOrigin(entries, independent) {
+  const matching = entries.filter(entry => entry.name === 'poteto-mode');
+  assert.equal(matching.length, 1, 'Separate project must resolve exactly one independent poteto-mode');
+  assert.equal(realpathSync(matching[0].location), realpathSync(independent));
+}
 export async function checkScopeContracts({ host, source, expected, signal }) {
   const selected = loadHosts().filter(row => host === 'all' || row.host === host);
   for (const row of selected) {
@@ -34,15 +78,14 @@ export async function checkScopeContracts({ host, source, expected, signal }) {
     const install = (scope, uninstall = false) => command(process.execPath, [join(source, 'scripts/install.mjs'), '--target', row.host, ...(scope === 'global' ? ['--global'] : ['--project', project]), ...(uninstall ? ['--uninstall'] : [])]);
     const bundle = scope => join(scope === 'global' ? env.HOME : project, '.pstack/package');
     const results = [];
-    const inspect = async (scenario, scopes) => {
+    const inspect = async (scenario, scopes, independent) => {
       if (row.host === 'claude-code') {
         results.push({ scenario, classification: 'unavailable-evidence', reason: 'No standalone catalog/origin command is exposed; standalone mock invocation is separate evidence.' });
         return;
       }
       const result = await inspectNativeDiscovery({ host: row.host, executable: row.executable, project, scope: scopes.join('+'), env, expected, bundles: scopes.map(bundle), actualVersion: process.env.PSTACK_HOST_VERSION || row.version, environmentOwnership: 'isolated-test', signal });
-      assert.equal(result.status, 'observed', JSON.stringify(result));
-      results.push({ scenario, ...result });
-      if (['project-only', 'global-only'].includes(scenario)) assert.equal(result.classification, 'identified-source', `${row.host} ${scenario}: ${result.classification}; ${result.completeBundles.length} complete bundles`);
+      assertScopeObservation({ host: row.host, scenario, result, expected, bundles: scopes.map(bundle), independent });
+      results.push({ scenario, ...result, ...(scenario === 'both-scopes' ? { policy: { supported: false, reason: 'Use one pstack installation scope; catalog resolution does not establish safe duplicate-scope precedence.' } } : {}) });
     };
     try {
       command('git', ['init', '-q']);
@@ -56,23 +99,19 @@ export async function checkScopeContracts({ host, source, expected, signal }) {
       const directory = row.host === 'opencode' ? join(env.XDG_CONFIG_HOME, 'opencode/skills/independent-poteto')
         : row.host === 'claude-code' ? join(env.CLAUDE_CONFIG_DIR, 'skills/independent-poteto') : join(env.HOME, '.agents/skills/independent-poteto');
       mkdirSync(directory, { recursive: true });
-      writeFileSync(join(directory, 'SKILL.md'), '---\nname: poteto-mode\ndescription: Independent same-name fixture\n---\n\nIndependent fixture; never invoke a model.\n');
-      await inspect('independent-same-name', ['project']);
+      const independentPath = join(directory, 'SKILL.md');
+      const independentContent = '---\nname: poteto-mode\ndescription: Independent same-name fixture\n---\n\nIndependent fixture; never invoke a model.\n';
+      writeFileSync(independentPath, independentContent);
+      await inspect('independent-same-name', ['project'], independentPath);
       if (row.host === 'codex') {
-        assert.equal(results.at(-1).classification, 'identified-source');
-        assert.ok(results.at(-1).independentIdentities.includes('poteto-mode'));
-        assert.ok(results.at(-1).entries.some(entry => entry.name === 'pstack:poteto-mode'));
-        assert.ok(results.at(-1).entries.some(entry => entry.name === 'poteto-mode' && entry.origin === realpathSync(join(directory, 'SKILL.md'))));
         results.at(-1).coexistence = { status: 'coherent', pstackScope: 'project', independentScope: 'global', sameNameQualified: true };
-        assert.equal(readFileSync(join(directory, 'SKILL.md'), 'utf8').includes('Independent fixture'), true);
       }
       if (row.host === 'opencode') {
         const same = results.at(-1);
-        same.classification = 'conflicting-registration'; same.coherentBundle = null;
-        same.reason = 'The project registration shadows the independent global same-name skill. Same-project coexistence is not proven.';
+        same.coexistence = { status: 'unsupported', reason: 'Observed project precedence hides the independent global same-name skill in this project. Use a separate project for the independent skill.' };
         const independentProject = join(temporary, 'independent-project'); mkdirSync(independentProject);
         const independent = JSON.parse(command('opencode', ['--pure', 'debug', 'skill'], independentProject));
-        assert.ok(independent.some(entry => entry.name === 'poteto-mode' && realpathSync(entry.location) === realpathSync(join(directory, 'SKILL.md'))));
+        assertIndependentOrigin(independent, independentPath);
         results.push({ scenario: 'independent-separate-project', classification: 'identified-source', identity: 'poteto-mode', origin: join(directory, 'SKILL.md'), reason: 'Project-scoped pstack leaves the independent global skill available in another project.' });
       }
       if (row.host === 'claude-code') {
@@ -80,6 +119,7 @@ export async function checkScopeContracts({ host, source, expected, signal }) {
         assert.equal(Number(inventory.match(/Skills \((\d+)\)/)?.[1]), expected.length);
         results.push({ scenario: 'native-plugin-plus-standalone', classification: 'conflicting-registration', reason: 'Native plugin inventory registers pstack:poteto-mode while standalone roots also exist; origin precedence is not observable. Use one pstack method per scope.' });
       }
+      assert.equal(readFileSync(independentPath, 'utf8'), independentContent, 'Independent skill bytes changed');
       const report = { schemaVersion: 1, host: row.host, expectedVersion: process.env.PSTACK_HOST_VERSION || row.version, results };
       const reportDirectory = process.env.PSTACK_REPORT_DIR || (process.env.RUNNER_TEMP ? join(process.env.RUNNER_TEMP, 'pstack-evidence') : null);
       if (reportDirectory) { mkdirSync(reportDirectory, { recursive: true }); writeFileSync(join(reportDirectory, `installation-contract-${row.host}.json`), JSON.stringify(report, null, 2) + '\n'); }
