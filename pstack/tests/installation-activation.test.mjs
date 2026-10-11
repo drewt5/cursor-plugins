@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { fork, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { verifyGeneration } from '../scripts/lib/installation-storage.mjs';
+import { stagePackage, verifyGeneration } from '../scripts/lib/installation-storage.mjs';
 import { prepareStagedActivation, applyStagedActivation, matchesObserved, journalName } from '../scripts/lib/installation-activation.mjs';
 import { observe, safePath, stateFrom } from '../scripts/lib/installation-state.mjs';
 import { withInstallationMutation, inspectInstallationLock, recoverInstallationLock } from '../scripts/lib/installation-lock.mjs';
@@ -120,4 +120,15 @@ test('cleanup failure after commit preserves the successful installation and ori
   assert.equal(existsSync(instruction), false);
   assert.equal(existsSync(join(f.root, '.pstack/activation-completed.json')), false);
   assert.deepEqual(readFileSync(join(f.root, '.pstack/install.json')), committedReceipt);
+});
+
+test('preparation rejects modified retained model code before importing it', async t => {
+  const f = fixture(t);
+  const generation = stagePackage({ source, root: f.root });
+  const model = join(f.root, generation.name, 'skills/pstack-runtime/scripts/models.mjs');
+  const marker = join(f.root, 'unverified-code-executed');
+  writeFileSync(model, `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(marker)}, 'executed');\nexport function loadModelConfig() {}\n`);
+  await assert.rejects(prepareStagedActivation(f.options), /Stored package digest mismatch/);
+  assert.equal(existsSync(marker), false);
+  assert.equal(existsSync(join(f.root, '.pstack/install.json')), false);
 });
