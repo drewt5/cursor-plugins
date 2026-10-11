@@ -7,6 +7,10 @@ const sourceCommit = 'a'.repeat(40), runId = '123', attempt = 1;
 const refresh = fixture => { for (const item of fixture.reports) item.bytes = JSON.stringify(item.report); return fixture; };
 test('complete required baseline compiles deterministic self-contained phase/job/version identities and digests', () => {
   const f = evidenceFixture(), result = validateReleaseEvidence(f); assert.deepEqual(validateReleaseEvidence(f), result);
+  assert.equal(result.createdAt, f.run.created_at);
+  const job = result.jobs.find(item => item.id === f.jobs[0].id);
+  assert.equal(job.startedAt, f.jobs[0].started_at); assert.equal(job.completedAt, f.jobs[0].completed_at);
+  assert.equal(job.steps[0].startedAt, f.jobs[0].steps[0].started_at); assert.equal(job.steps[0].completedAt, f.jobs[0].steps[0].completed_at);
   assert.equal(result.reports.length, 6); assert.equal(result.jobs.length, 8); assert.equal(result.sourceHeadSha, sourceCommit);
   for (const r of result.reports) { assert.match(r.reportDigest, /^[a-f0-9]{64}$/); assert.equal(r.status, 'passed'); assert.ok(r.phases.every(p => p.status === 'passed' && /^[a-f0-9]{64}$/.test(p.logDigest))); }
   const published = JSON.parse(JSON.stringify(result)); f.reports = []; assert.equal(published.reports[0].phases[0].command[0], 'node'); assert.equal(published.jobs[0].steps[0].conclusion, 'success');
