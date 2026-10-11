@@ -4,7 +4,7 @@ import { rmdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { canonicalPath, observe, present, safePath, stateFrom } from './installation-state.mjs';
-import { readActivationJournal, matchesObserved, legacyMoveStatus, applyLegacyMove, applyJournalImage, persistJournal, recoveryCommand, cleanupJournalMetadata, cleanOperationTemporaries, finishJournalCleanup } from './activation-journal.mjs';
+import { readActivationJournal, matchesObserved, legacyMoveStatus, applyLegacyMove, applyJournalImage, persistJournal, recoveryCommand, cleanupJournalMetadata, cleanPendingJournal, cleanOperationTemporaries, finishJournalCleanup } from './activation-journal.mjs';
 import { inspectInstallationLock, recoverInstallationLock, withInstallationMutation } from './installation-lock.mjs';
 export function journalMutationRoots(root, journal) {
   return [...new Set([journal.priorReceipt, journal.intendedReceipt].filter(state => Object.keys(state.entries).some(name => name.startsWith('@opencode/'))).map(state => resolve(root, state.opencodeRoot)))];
@@ -22,6 +22,7 @@ export async function recoverUnderLock(root, { boundary = async () => {} } = {})
     return { status: 'no-operation', restored: false };
   }
   const command = recoveryCommand(root, journal);
+  cleanPendingJournal(root, journal);
   if (['committed', 'restored'].includes(journal.state)) {
     const conflicts = journal.operations.filter(op => {
       if (op.kind === 'legacy-directory') {
