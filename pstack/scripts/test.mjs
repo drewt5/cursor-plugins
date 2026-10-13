@@ -54,7 +54,7 @@ try {
       const helpers = join(temporary, `helpers-${pass}`);
       cpSync(join(root, 'skills/poteto-mode/scripts'), helpers, { recursive: true, filter: path => !path.split(/[\\/]/).includes('node_modules') });
       run('bun', ['install', '--frozen-lockfile'], helpers);
-      run('bun', ['test', 'orch', 'watch-pr'], helpers);
+      run('bun', ['test', 'orch', 'watch-pr', 'check-plan.test.ts'], helpers);
       run('bun', ['run', 'typecheck'], helpers);
     }
     if (mode === 'full') {

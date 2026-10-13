@@ -20,7 +20,10 @@ test('audit handles worktree paths with spaces and does not clear a closed unmer
   };
   git(['init', '-q', '-b', 'main']);
   git(['-c', 'user.name=Pstack test', '-c', 'user.email=pstack@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'initial']);
+  git(['update-ref', 'refs/remotes/origin/main', 'HEAD']);
   git(['worktree', 'add', '-q', '-b', 'candidate', branch]);
+  const commit = spawnSync('git', ['-C', branch, '-c', 'user.name=Pstack test', '-c', 'user.email=pstack@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'unmerged'], { encoding: 'utf8' });
+  assert.equal(commit.status, 0, commit.stderr);
   writeFileSync(join(bin, 'gh'), '#!/bin/sh\necho "[]"\n', { mode: 0o755 });
   writeFileSync(join(bin, 'jq'), '#!/bin/sh\necho "#1/CLOSED"\n', { mode: 0o755 });
   const result = spawnSync('bash', [script, repo], {
@@ -28,12 +31,29 @@ test('audit handles worktree paths with spaces and does not clear a closed unmer
   });
   assert.equal(result.status, 0, result.stderr);
   const lines = result.stdout.trim().split('\n');
-  assert.equal(lines.length, 2);
-  const row = lines[1].split('\t');
+  assert.equal(lines.length, 3);
+  assert.equal(lines[0], '# base: origin/main');
+  const row = lines[2].split('\t');
   assert.equal(row[5], '#1/CLOSED');
   assert.equal(row[6], '-');
   assert.equal(row[7], 'review');
   assert.equal(row[8], realpathSync(branch));
+  git(['update-ref', 'refs/remotes/origin/integration', 'candidate']);
+  git(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/integration']);
+  const audit = args => spawnSync('bash', [script, ...args, repo], {
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, PSTACK_TRANSCRIPTS_DIR: '' }, encoding: 'utf8', timeout: 10000,
+  });
+  const defaultBase = audit([]);
+  assert.equal(defaultBase.status, 0, defaultBase.stderr);
+  assert.match(defaultBase.stdout, /^# base: origin\/integration\n/);
+  assert.equal(defaultBase.stdout.trim().split('\n')[2].split('\t')[2], 'YES');
+  const override = audit(['--base', 'origin/main']);
+  assert.equal(override.status, 0, override.stderr);
+  assert.equal(override.stdout.trim().split('\n')[2].split('\t')[2], 'no');
+  const missing = audit(['--base', 'missing-ref']);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /base ref not found/);
+  assert.equal(missing.stdout, '');
 });
 
 
