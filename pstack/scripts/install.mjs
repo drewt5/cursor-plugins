@@ -5,9 +5,9 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { hosts } from './lib/installation-state.mjs';
 import { previewInstallation, applyPublicInstallation } from './lib/installation-public.mjs';
-import { formatPreflight } from './lib/installation-preflight.mjs';
+import { renderOperation } from './lib/cli-output.mjs';
 const source = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
-const help = `Usage: node pstack/scripts/install.mjs [--target all|${hosts.join('|')}] [--project PATH|--global] [--uninstall] [--dry-run] [--recover-dead-locks]
+const help = `Usage: node pstack/scripts/install.mjs [--target all|${hosts.join('|')}] [--project PATH|--global] [--uninstall] [--dry-run] [--recover-dead-locks] [--verbose]
 Defaults: current project; fresh install selects the only usable CLI host or requires --target.
 Re-run/update/uninstall without --target uses recorded hosts; explicit additions are additive.
 --uninstall removes only the selected hosts. --target all selects Codex, OpenCode, and Claude Code.
@@ -17,7 +17,7 @@ function parse(args) {
   const options = {};
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (['--global', '--uninstall', '--help', '--dry-run', '--recover-dead-locks'].includes(arg)) options[arg.slice(2)] = true;
+    if (['--global', '--uninstall', '--help', '--dry-run', '--recover-dead-locks', '--verbose'].includes(arg)) options[arg.slice(2)] = true;
     else if (['--target', '--project'].includes(arg) && args[i + 1] && !args[i + 1].startsWith('--')) options[arg.slice(2)] = args[++i];
     else throw new Error(`Unknown or incomplete option: ${arg}\n${help}`);
   }
@@ -39,24 +39,13 @@ async function run(options) {
     if (!plan || plan.conflicts.length || failures.length || discoveryFailures.length) process.exitCode = 1;
     return;
   }
-  const outcome = await applyPublicInstallation(input);
-  const applied = outcome.prepared;
-  if (applied) console.log(formatPreflight(applied));
-  if (outcome.recovered) console.log(`Recovery: ${outcome.recovered.status}`);
-  for (const item of outcome.cleanup?.preserved || []) console.log(`Preserved ${item.path}: ${item.reason}. ${item.action}`);
-  if (outcome.status === 'preflight-failed') {
-    console.error('Preflight failed; no files changed. ' + formatPreflight(applied));
-    process.exitCode = 1; return;
-  }
-  if (outcome.status === 'verification-failed-restored') {
-    console.error('Post-activation verification failed; the prior installation was restored. Preserve diagnostics, resolve the failure, and retry the selected release. ' + JSON.stringify(outcome.report?.findings || outcome.failure) + ' ' + JSON.stringify(outcome.report?.discovery));
-    process.exitCode = 1; return;
-  }
-  if (outcome.cleanupPending) console.log(`Cleanup pending: ${outcome.cleanupError}. Run doctor for the retained recovery command.`);
-  for (const probe of outcome.report?.discovery?.probes || []) console.log(`${probe.host} discovery: ${probe.status} (${probe.classification}). ${probe.reason || 'Native origins observed.'}`);
-  console.log(!applied.targets.length
-    ? `Removed selected pstack hosts from ${root}. User configuration and other files were preserved.`
-    : `Pstack files installed for ${applied.targets.join(', ')} in ${root}. Static integrity: ${outcome.report?.integrity?.status || 'verified owned removal'}; discovery: ${outcome.report?.discovery?.status || 'unavailable'}. Restart the host to discover skills. No model configuration required.`);
+  const outcome = await applyPublicInstallation(input, {
+    onRecoveryReady: command => new Promise((resolve, reject) => process.stderr.write(`Recovery if interrupted: ${command}\n`, error => error ? reject(error) : resolve()))
+  });
+  const output = renderOperation(outcome, { root, global: !!options.global, uninstall: !!options.uninstall, verbose: !!options.verbose, scriptsRoot: join(source, 'scripts') });
+  process.stdout.write(output.stdout);
+  process.stderr.write(output.stderr);
+  if (['preflight-failed', 'verification-failed-restored'].includes(outcome.status)) process.exitCode = 1;
 }
 try {
   const options = parse(process.argv.slice(2));

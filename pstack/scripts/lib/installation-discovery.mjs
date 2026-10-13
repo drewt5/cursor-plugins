@@ -77,7 +77,7 @@ export async function inspectExistingInstallation(options) {
   for (const finding of report.findings.filter(item => item.code === 'DISCOVERY_UNAVAILABLE')) {
     const probe = probes.find(item => item.host === finding.subject);
     finding.evidence = { ...finding.evidence, safety: probe.safety, reason: probe.reason };
-    finding.action = 'Use static integrity evidence; native startup is not automatically read-only. Run isolated maintainer fixtures to collect limited native evidence.';
+    finding.action = 'Host loading was not checked because provider startup can change your environment. Restart the host after changing installed instructions.';
   }
   return report;
 }

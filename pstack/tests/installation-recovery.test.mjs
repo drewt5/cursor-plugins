@@ -46,7 +46,8 @@ async function killAt(t, prepared, target, executableSource = source, env = proc
   child.on('message', message => { if (message.boundary === target) { killed = true; child.kill('SIGKILL'); } else if (message.boundary) child.send('continue'); });
   child.send({ prepared: serializablePrepared(prepared) }); const [code, signal] = await once(child, 'exit');
   assert.ok(killed, `Missing boundary ${target}: ${stderr}`); assert.equal(signal, 'SIGKILL', stderr); assert.equal(code, null);
-  return stdout;
+  assert.equal(stdout, '');
+  return stderr;
 }
 function executeRecovery(f, command) {
   const result = spawnSync('sh', ['-c', command + ' --recover-dead-locks'], { env: f.env, encoding: 'utf8', timeout: 15000 });

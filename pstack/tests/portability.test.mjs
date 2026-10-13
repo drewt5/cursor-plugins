@@ -74,7 +74,7 @@ test('conflicting user skill aborts before writing package files', t => {
   writeFileSync(join(dir, '.agents/skills/how/SKILL.md'), 'user skill');
   const result = install(dir);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /Install conflict/);
+  assert.match(result.stderr, /Conflicting path/);
   assert.equal(readFileSync(join(dir, '.agents/skills/how/SKILL.md'), 'utf8'), 'user skill');
   assert.ok(!existsSync(join(dir, '.pstack/package')));
 });
@@ -87,7 +87,7 @@ test('updates and uninstall preserve modified owned files', t => {
   for (const args of [[], ['--uninstall']]) {
     const result = install(dir, 'all', args);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /Locally modified|GENERATION_INVALID/);
+    assert.match(result.stderr, /Managed path was modified|Retained package integrity failed/);
     assert.equal(readFileSync(file, 'utf8'), 'local edit');
   }
 });

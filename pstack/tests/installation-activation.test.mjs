@@ -135,3 +135,25 @@ test('preparation rejects modified retained model code before importing it', asy
   assert.equal(existsSync(marker), false);
   assert.equal(existsSync(join(f.root, '.pstack/install.json')), false);
 });
+test('recovery notification is awaited after durable instruction and before activation; direct library calls are silent', async t => {
+  const f = compact(t), before = f.prepared.plan.operations.map(op => observe(op.path));
+  let delivered = false, notified = false;
+  const originalLog = console.log, originalError = console.error, output = [];
+  console.log = (...args) => output.push(args); console.error = (...args) => output.push(args);
+  try {
+    await applyStagedActivation(f.prepared, {
+      onRecoveryReady: async command => {
+        notified = true;
+        const journal = JSON.parse(readFileSync(join(f.root, journalName)));
+        assert.equal(journal.state, 'prepared'); assert.equal(journal.recoveryInstruction, command);
+        assert.equal(readFileSync(join(f.root, '.pstack/recovery.txt'), 'utf8'), command + '\n');
+        assert.deepEqual(f.prepared.plan.operations.map(op => observe(op.path)), before);
+        await new Promise(resolve => setImmediate(resolve)); delivered = true;
+      },
+      boundary: name => { if (name === 'prepared') assert.equal(delivered, true); }
+    });
+    assert.equal(notified, true);
+    const silent = compact(t); await applyStagedActivation(silent.prepared);
+    assert.deepEqual(output, []);
+  } finally { console.log = originalLog; console.error = originalError; }
+});

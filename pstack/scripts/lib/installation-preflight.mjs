@@ -50,10 +50,3 @@ export async function applyPreparedInstallation(prepared, { apply = applyInstall
   const failed = report.findings.some(item => item.severity === 'error') || !prepared.options.uninstall && mandatoryDiscoveryFailures(report).length > 0;
   return { status: failed ? 'post-apply-failed' : 'applied', changed: true, report };
 }
-export function formatPreflight(prepared) {
-  const lines = [`Scope: ${prepared.options.global ? 'global' : 'project'} ${prepared.root}; selected targets: ${prepared.selected.join(', ') || 'none'}`];
-  for (const item of prepared.report.findings) lines.push(`${item.code} [${item.verification}]: ${item.subject}. ${item.action}`);
-  for (const conflict of prepared.plan?.conflicts || []) lines.push(`${conflict.code}: ${conflict.reason}: ${conflict.path}`);
-  for (const probe of prepared.discoveryFailures) lines.push(`DISCOVERY_FAILED: ${probe.host} ${probe.classification}. Preserve this installation and resolve the conflicting source.`);
-  return lines.join('\n');
-}

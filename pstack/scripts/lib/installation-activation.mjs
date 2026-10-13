@@ -95,7 +95,7 @@ export function buildActivationJournal(prepared) {
   return { schemaVersion: 1, kind: 'pstack-activation', id, root, state: 'prepared', progress: 0, priorReceipt: plan.snapshot.previous,
     intendedReceipt: plan.artifacts.state, generation: prepared.generation, recoveryGeneration: prepared.recoveryGeneration ?? prepared.generation, ...(prepared.legacy ? { legacyGeneration: prepared.legacy.generation } : {}), operations, createdDirectories: parentDirectories(root, operations) };
 }
-export async function applyActivationUnderLock(prepared, { boundary = async () => {}, diagnose = inspectExistingInstallation } = {}) {
+export async function applyActivationUnderLock(prepared, { boundary = async () => {}, diagnose = inspectExistingInstallation, onRecoveryReady } = {}) {
   const journal = buildActivationJournal(prepared);
   if (!journal) {
     return { status: 'unchanged', changed: false };
@@ -104,7 +104,7 @@ export async function applyActivationUnderLock(prepared, { boundary = async () =
   journal.recoveryInstruction = recoveryCommand(root, journal);
   persistJournal(root, journal);
   writeFileSync(safePath(root, instructionName), journal.recoveryInstruction + '\n', { flag: 'wx', mode: 0o600 });
-  console.log(`Recovery if interrupted: ${journal.recoveryInstruction}`);
+  await onRecoveryReady?.(journal.recoveryInstruction);
   await boundary('prepared', journal);
   journal.state = 'applying';
   persistJournal(root, journal);

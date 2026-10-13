@@ -116,9 +116,9 @@ export function inspectInstallation({ root, global = false, targets, env = proce
     if (row) {
       const observation = versionProbe(row, env); result.hosts.push({ host, ...observation });
       if (observation.code) finding(observation.code, observation.code === 'HOST_VERSION_UNKNOWN' ? 'warning' : 'error', host, observation.evidence,
-        observation.code === 'HOST_VERSION_UNKNOWN' ? 'Use the recorded tested provider version in an isolated environment, or collect native compatibility evidence before accepting this version.' : 'Check the selected host executable and PATH, then retry the bounded --version probe; install or repair the provider through its own supported tooling.', observation.status === 'unavailable-compatibility' ? 'unavailable' : 'verified');
+        observation.code === 'HOST_VERSION_UNKNOWN' ? 'Installation can proceed if file checks pass. Keep this provider version or use its supported installation tooling to choose the recorded tested version.' : 'Check the selected host executable and PATH, then retry the bounded --version probe; install or repair the provider through its own supported tooling.', observation.status === 'unavailable-compatibility' ? 'unavailable' : 'verified');
     }
-    finding('DISCOVERY_UNAVAILABLE', 'info', host, { origin: 'No native discovery probe was launched', configuredRoot: result.configuredRoots[host] }, 'Use the host-specific safe discovery adapter when available; Cursor remains static coverage.', 'unavailable');
+    finding('DISCOVERY_UNAVAILABLE', 'info', host, { origin: 'No native discovery probe was launched', configuredRoot: result.configuredRoots[host] }, 'Host loading was not checked. Restart the host after changing installed instructions.', 'unavailable');
   }
   if (!global && selected.length && canonicalPath(globalRoot) !== result.scope.root) {
     try {
