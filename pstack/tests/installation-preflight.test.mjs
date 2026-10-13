@@ -25,13 +25,13 @@ function fixture(t) {
 }
 test('one CLI lifecycle preserves unrelated skills, diagnoses later collisions, refuses update/uninstall and safely finishes', t => {
   const f = fixture(t), unrelated = join(f.project, '.agents/skills/user-skill'); mkdirSync(unrelated, { recursive: true }); writeFileSync(join(unrelated, 'SKILL.md'), 'user-owned');
-  let result = f.run('install', ['--target', 'codex']); assert.equal(result.status, 0, result.stderr); assert.match(result.stdout, /Scope: project/); assert.match(result.stdout, /discovery: unavailable/);
+  let result = f.run('install', ['--target', 'codex']); assert.equal(result.status, 0, result.stderr); assert.match(result.stdout, /Scope: project/); assert.match(result.stdout, /Host loading was not checked/);
   assert.equal(f.run('doctor', ['--json']).status, 0);
   const path = join(f.project, '.agents/skills/how'), link = readlinkSync(path); rmSync(path); mkdirSync(path); writeFileSync(join(path, 'SKILL.md'), 'later user collision'); const before = snapshot(f.root);
   const preview = f.run('install', ['--dry-run']); assert.equal(preview.status, 1); const installer = JSON.parse(preview.stdout);
   const doctor = f.run('doctor', ['--json']); assert.equal(doctor.status, 1); const diagnosis = JSON.parse(doctor.stdout);
   assert.ok(installer.findings.some(item => item.code === 'OWNED_REPLACED')); assert.ok(diagnosis.findings.some(item => item.code === 'OWNED_REPLACED'));
-  for (const command of ['install', 'uninstall']) { result = f.run(command); assert.equal(result.status, 1); assert.match(result.stderr, /no files changed/); assert.deepEqual(snapshot(f.root), before); }
+  for (const command of ['install', 'uninstall']) { result = f.run(command); assert.equal(result.status, 1); assert.match(result.stderr, /No installation files changed/); assert.deepEqual(snapshot(f.root), before); }
   const backup = join(f.project, 'preserved-user-skill'); renameSync(path, backup); symlinkSync(link, path, 'dir');
   result = f.run('uninstall', [], { ...f.env, PATH: '' }); assert.equal(result.status, 0, result.stderr); assert.equal(readFileSync(join(backup, 'SKILL.md'), 'utf8'), 'later user collision'); assert.equal(readFileSync(join(unrelated, 'SKILL.md'), 'utf8'), 'user-owned');
 });

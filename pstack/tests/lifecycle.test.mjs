@@ -62,7 +62,7 @@ test('immutable package mode changes refuse update until restored without overwr
   ok(run('install', args));
   const name = 'skills/poteto-mode/scripts/worktree-audit.sh', file = join(project, '.pstack/package', name);
   chmodSync(file, 0o600);
-  const refused = run('install', args); assert.equal(refused.status, 1); assert.match(refused.stderr, /GENERATION_INVALID|PACKAGE_DIGEST_CHANGED/); assert.equal(lstatSync(file).mode & 0o777, 0o600);
+  const refused = run('install', args); assert.equal(refused.status, 1); assert.match(refused.stderr, /Retained package integrity failed|Managed package contents differ/); assert.equal(lstatSync(file).mode & 0o777, 0o600);
   chmodSync(file, lstatSync(join(root, name)).mode & 0o777); ok(run('install', args));
   assert.equal(lstatSync(file).mode & 0o777, lstatSync(join(root, name)).mode & 0o777);
   assert.deepEqual(readFileSync(file), readFileSync(join(root, name)));

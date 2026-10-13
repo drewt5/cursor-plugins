@@ -51,6 +51,7 @@ Keep each fact in its natural home:
 - Task scope and ordering belong in issues and their native dependency links.
 - Implemented interfaces and invariants belong beside their code and regression tests.
 - User-facing behavior belongs in the relevant installation or usage documentation.
+- CLI output follows [the logging policy](pstack/docs/logging.md), including message severity, stream ownership, diagnostic detail, and machine compatibility.
 - Verification commands and evidence interpretation belong in `pstack/docs/ci.md`.
 
 Avoid a separate contract registry or copied checklists in every issue. Add an architecture note only when a cross-module decision cannot be understood reasonably from the implementation and its existing documentation.

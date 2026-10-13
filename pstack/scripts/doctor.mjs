@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 import { existsSync, realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { hosts } from './lib/installation-state.mjs';
 import { inspectExistingInstallation } from './lib/installation-discovery.mjs';
 import { probeHostVersion } from './lib/installation-diagnostics.mjs';
 import { loadHosts } from './lib/tested-hosts.mjs';
-import { diagnosticExitCode, formatDoctor } from './lib/doctor-output.mjs';
-const help = `Usage: node pstack/scripts/doctor.mjs [--project PATH|--global] [--target all|${hosts.join('|')}] [--json]
+import { diagnosticExitCode } from './lib/doctor-output.mjs';
+import { renderDoctor } from './lib/cli-output.mjs';
+const help = `Usage: node pstack/scripts/doctor.mjs [--project PATH|--global] [--target all|${hosts.join('|')}] [--json] [--verbose]
 Defaults: current project and recorded targets. Uninstalled scopes show detected CLI versions.
 Read-only, offline static checks; native visibility limits remain explicit. No repair or model request.
 Exit: 0 no actionable failure (including advisory unknown), 1 actionable failure, 2 usage/internal error.
@@ -16,7 +17,7 @@ Exit 0 does not imply complete verification; inspect JSON verification states.`;
 export function parseDoctor(args) {
   const options = {};
   for (let i = 0; i < args.length; i++) {
-    if (['--global', '--json', '--help'].includes(args[i])) options[args[i].slice(2)] = true;
+    if (['--global', '--json', '--help', '--verbose'].includes(args[i])) options[args[i].slice(2)] = true;
     else if (['--project', '--target'].includes(args[i]) && args[i + 1] && !args[i + 1].startsWith('--')) options[args[i].slice(2)] = args[++i];
     else throw new Error(`Unknown or incomplete option: ${args[i]}`);
   }
@@ -37,7 +38,7 @@ if (process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[
     if (options.help) console.log(help);
     else {
       const { report, exitCode } = await runDoctor(options);
-      process.stdout.write(options.json ? JSON.stringify(report, null, 2) + '\n' : formatDoctor(report));
+      process.stdout.write(options.json ? JSON.stringify(report, null, 2) + '\n' : renderDoctor(report, { root: report.scope.root, global: !!options.global, verbose: !!options.verbose, scriptsRoot: dirname(fileURLToPath(import.meta.url)) }));
       process.exitCode = exitCode;
     }
   } catch (error) { console.error(`Doctor could not complete: ${error.message}\n${help}`); process.exitCode = 2; }

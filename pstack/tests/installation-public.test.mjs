@@ -58,7 +58,7 @@ test('public fresh and legacy operations killed after stable transition recover 
     t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
     child.on('message', message => { if (message.boundary === (legacy ? 'mutation:1' : 'mutation:0')) child.kill('SIGKILL'); else if (message.boundary) child.send('continue'); else if (message.error) error += message.error; });
     child.send({ source: candidate, root: f.root, globalRoot: f.home, options: { target: 'cursor' } }); const [code, signal] = await once(child, 'exit'); assert.equal(signal, 'SIGKILL', error); assert.equal(code, null);
-    const command = readFileSync(join(f.root, '.pstack/recovery.txt'), 'utf8').trim(); assert.ok(output.includes(command)); rmSync(candidate, { recursive: true });
+    const command = readFileSync(join(f.root, '.pstack/recovery.txt'), 'utf8').trim(); assert.equal(output, ''); assert.ok(error.includes(command)); rmSync(candidate, { recursive: true });
     const recovered = spawnSync('/bin/sh', ['-c', command + ' --recover-dead-locks'], { env: f.env, encoding: 'utf8' }); ok(recovered); assert.equal(JSON.parse(recovered.stdout).restored, true);
     const active = tree(f.root).filter(([path]) => !path.includes('/.pstack/releases') && path !== join(f.root, '.pstack'));
     const original = before.filter(([path]) => path !== join(f.root, '.pstack')); assert.deepEqual(active.filter(([, , value]) => value !== 'directory'), original.filter(([, , value]) => value !== 'directory'));

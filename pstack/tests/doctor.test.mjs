@@ -27,7 +27,7 @@ test('doctor reports healthy static/unavailable discovery, release unknown and r
   assert.equal(result.status, 0, result.stderr); assert.equal(result.stderr, ''); const report = JSON.parse(result.stdout);
   assert.equal(report.schemaVersion, 1); assert.equal(report.integrity.status, 'verified'); assert.equal(report.discovery.status, 'unavailable'); assert.deepEqual(report.selectedTargets, ['cursor']);
   assert.equal(report.session.restartRequiredAfterChanges, true); assert.ok(!result.stdout.includes(f.env.USER_SECRET)); assert.deepEqual(snapshot(f.root), before);
-  const human = f.run('doctor', ['--project', f.project]); assert.equal(human.status, 0); assert.match(human.stdout, /Release identity: 0\.16\.0 development/); assert.match(human.stdout, /until restart/);
+  const human = f.run('doctor', ['--project', f.project]); assert.equal(human.status, 0); assert.doesNotMatch(human.stdout, /source .*digest/); assert.match(human.stdout, /until restart/);
 });
 test('uninstalled doctor detects CLI information without treating absent installation/providers as failure', t => {
   const f = fixture(t), before = snapshot(f.root);
