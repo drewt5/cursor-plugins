@@ -1,5 +1,13 @@
 # Portable release metadata
 
+## First upstream synchronization (unreleased)
+
+The fork incorporates upstream `dbf49813a39c1a5389c5e28cb8e4c1c2379e2454` (upstream manifest version `0.15.23`) through a Git merge. It adds `in-your-own-words` for goal restatement and `ketchup` for a brief visual catch-up; all 53 upstream skills remain, plus the portable runtime. Both additions retain explicit invocation and use the host syntax in [installation](install.md). The portable version remains the unreleased `0.16.0`; this synchronization publishes no release.
+
+Upstream also shortens workflow prompts, keeps the initiating chat as the poteto-mode runner, strengthens app readiness checks, suggests cheap diagnostic signals after deep debugging, paginates PR review threads, ignores fenced examples in plan checks, and lets worktree audits choose the actual PR base. Portable model inheritance, capability fallbacks, active-project history boundaries and installation ownership remain intact. Existing installed copies need the installer rerun from the selected source and a host restart to receive these changes. No receipt or model configuration migration is required.
+
+The fork retains its root manifest description/version and resolves delegated skills from the active package rather than selecting the highest version in Cursor's global plugin directory. Required helper checks now include upstream's fenced-plan regression cases. Native loading/mock invocation and limited skill behavior fixtures do not certify every revised workflow's reasoning or Cursor GUI behavior.
+
 ## Unreleased installer default change
 
 Fresh standalone installs no longer select all CLI hosts automatically. Without `--target`, the sole usable CLI host is selected; zero or multiple usable hosts require an explicit target before any writes. `--target all` still selects Codex, OpenCode, and Claude Code; Cursor remains explicit. Receipt-backed updates retain recorded targets, and offline uninstall uses those targets.
@@ -67,7 +75,7 @@ Validation launches no provider, model request, or user installer and creates no
 
 ## Review upstream intent proportionally
 
-Use `node pstack/scripts/release-candidate.mjs --inspect-upstream` to obtain the incorporated-upstream identity, exact shared instruction diff digest, changed paths, and added/removed skill inventory. Read the Git diff and account for material deviations in `upstream-review.json`; a hash/ancestor check cannot make this intent judgment. The current review preserves the original 51 skills and adds one runtime skill, identifies model/delegation/history/service/default changes, and records generic helper/security fixes worth proposing upstream separately. It does not publish those proposals automatically.
+Use `node pstack/scripts/release-candidate.mjs --inspect-upstream` to obtain the incorporated-upstream identity, exact shared instruction diff digest, changed paths, and added/removed skill inventory. Read the Git diff and account for material deviations in `upstream-review.json`; a hash/ancestor check cannot make this intent judgment. The current review preserves all 53 incorporated upstream skills and adds one runtime skill, identifies model/delegation/history/service/default changes, and records generic helper/security fixes worth proposing upstream separately. It does not publish those proposals automatically.
 
 The validator binds review rationale to every changed shared workflow path and inventory change. If the upstream base and shared diff are unchanged, reuse the reviewed evidence for a metadata/adapter-only candidate. When they change, refresh the affected rationale and inventory delta rather than re-reviewing unchanged library content or keeping duplicate snapshots. Review the deliberate model-inheritance and invocation/default changes in release notes; do not infer actual independent reasoning or Cursor GUI behavior from mock loading.
 

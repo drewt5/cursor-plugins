@@ -42,12 +42,13 @@ Keep repository-wide changes limited to the fork documentation, pstack's marketp
 
 Use `upstream` for `https://github.com/cursor/plugins.git` and `origin` for `https://github.com/drewt5/cursor-plugins.git`. After cloning the fork, add the upstream remote with `git remote add upstream https://github.com/cursor/plugins.git`.
 
-Start with a clean worktree, then create a review branch:
+Follow the contribution and task-claim protocols first. Fetch both current branches and create an isolated review worktree. Full upstream history is required to find the merge base; if `git rev-parse --is-shallow-repository` prints `true`, run `git fetch --unshallow origin` first.
 
 ```sh
-git fetch upstream
-git switch main
-git switch -c sync/upstream-YYYY-MM-DD
+git fetch origin main
+git fetch upstream main
+git worktree add -b sync/upstream-YYYY-MM-DD ../pstack-upstream-YYYY-MM-DD origin/main
+cd ../pstack-upstream-YYYY-MM-DD
 git log --oneline HEAD..upstream/main -- pstack
 git merge upstream/main
 ```
